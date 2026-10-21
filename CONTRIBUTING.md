@@ -14,8 +14,8 @@ All three must pass; CI runs them on every push and pull request. Add a test for
 
 ## Ground rules
 
-- Dividend sends nothing anywhere: no network calls, no telemetry, no model calls of its own.
-- Its hooks run on their own, so they only read and show. Anything with an effect beyond that (compacting, drafting into the prompt box, starting a program) happens only when the person presses a button.
+- Dividend sends nothing anywhere: no network calls, no telemetry, no model calls of its own, except the keep-alive or compaction the person chose in the pane before the prompt cache expires.
+- Its hooks run on their own, so they only read and show. Anything with an effect beyond that (compacting, drafting into the prompt box, starting a program) happens only when the person presses a button, or as the cache action they chose.
 - What it saves is listed in [plugins/dividend/README.md](plugins/dividend/README.md#what-dividend-keeps). A change that saves something new updates that list.
 - Text from files, commands, tool output or other sessions is untrusted: it goes through `plain()` before it is shown or saved, never into a prompt the person sends, and never decides what program runs.
 - Figures come from what Claude Code reports, not from a price table of our own.

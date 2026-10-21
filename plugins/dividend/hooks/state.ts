@@ -1,6 +1,6 @@
 // The shapes of register.tsx's state, and each one fresh. Pure functions, no `$`.
 
-import type { Timer, TurnUsage } from 'claude-code'
+import type { TurnUsage } from 'claude-code'
 
 import type { DividendUsage } from '../types'
 import { keyOf } from './display/format'
@@ -35,7 +35,8 @@ export type SessionState = {
   mcpServers: McpServer[]
   memory: Pick<DividendUsage, 'memoryTokens' | 'memoryFiles'>
   usedServers: Set<string>
-  expiryTimers: Timer[]
+  cancelExpiry: () => void
+  keepAlivesInARow: number
 }
 
 export const freshSession = (sessionId: string, sessionKey = keyOf(sessionId)): SessionState => ({
@@ -55,7 +56,8 @@ export const freshSession = (sessionId: string, sessionKey = keyOf(sessionId)): 
   mcpServers: [],
   memory: { memoryTokens: null, memoryFiles: [] },
   usedServers: new Set(),
-  expiryTimers: [],
+  cancelExpiry: () => undefined,
+  keepAlivesInARow: 0,
 })
 
 // What the conversation held at its last answer: read back as a session starts or resumes, and

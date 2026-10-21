@@ -33,6 +33,27 @@ const WARM_COMPACT_LEAD_SECONDS = 10 * 60
 export const LONGEST_TTL: CacheTtl = { seconds: 60 * 60, source: 'unknown' }
 const TTL_ADVICE_BREAKS = 3
 
+export const CACHE_EXPIRY_ACTIONS = ['Do nothing', 'Keep cache warm', 'Auto compact'] as const
+
+export type CacheExpiryAction = (typeof CACHE_EXPIRY_ACTIONS)[number]
+
+export const isCacheExpiryAction = (value: unknown): value is CacheExpiryAction => CACHE_EXPIRY_ACTIONS.some(action => action === value)
+
+export const KEEP_ALIVE_PROMPT = "Dividend cache keep-alive. Reply only with OK. Do not use tools or continue the task."
+
+export const KEEP_ALIVES_IN_A_ROW = 5
+
+// Opt-in actions also work for small conversations and 5-minute caches. An unknown lifetime is
+// enough for advice, but never enough to spend usage on the person's behalf.
+export type CacheActionTiming = { actAt: number; expiresAt: number }
+
+export const cacheActionTiming = (answeredAt: number, ttl: CacheTtl | null): CacheActionTiming | null => {
+  if (ttl === null || ttl.source === 'unknown' || ttl.seconds <= 0) return null
+  const expiresAt = answeredAt + ttl.seconds * 1000
+  const leadSeconds = Math.min(WARM_COMPACT_LEAD_SECONDS, ttl.seconds / 5)
+  return { actAt: expiresAt - leadSeconds * 1000, expiresAt }
+}
+
 export const isEnvSet = (value: string | undefined): boolean =>
   value !== undefined && value !== '' && value !== '0' && value.toLowerCase() !== 'false'
 

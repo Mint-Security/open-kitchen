@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, MatchedHook, Register, SessionMeasureInput, SessionUsage, TurnUsage } from 'claude-code'
+import type { EngineInterface, MatchedHook, Register, SessionMeasureInput, SessionUsage, Timer, TurnUsage } from 'claude-code'
 
 import type { DividendRateLimit, DividendReaction, DividendTip } from '../types'
 import { keyOf, plain, tokens } from './display/format'
@@ -16,15 +16,15 @@ import type { Figures, Opening } from './state'
 import { limitTips, usageTips } from './tips/advisor'
 import type { UsageContext } from './tips/advisor'
 import { askFor } from './tips/asks'
-import { LONGEST_TTL, breakTiming, expiredTip, isEnvSet, planOf, resolveTtl } from './tips/cache'
-import type { CacheTtl } from './tips/cache'
+import { KEEP_ALIVE_PROMPT, KEEP_ALIVES_IN_A_ROW, LONGEST_TTL, breakTiming, cacheActionTiming, expiredTip, isEnvSet, planOf, resolveTtl } from './tips/cache'
+import type { CacheExpiryAction, CacheTtl } from './tips/cache'
 import { compactionBrief, duplicateInstructions, dupesTip } from './tips/context'
 import { isPastLimitTip } from './tips/kinds'
 import type { Area, Tip } from './tips/kinds'
 import { bandTips, isAnsweredByCompaction, isBreakTip, isSettled, isStaleBreakTip, isUnread, shownTips, tipsToSave } from './tips/shown'
 import type { Here, TipSettings } from './tips/shown'
-import { asRecord, lastTurnsIn, merged, mergeReactions, mutedKinds, restoredReactions, restoredTips, STORE_KEY, TURNS_KEY, withLastTurn } from './tips/store'
-import type { Changes, LastTurn, Saved } from './tips/store'
+import { asRecord, lastTurnsIn, merged, mergeReactions, mutedKinds, restoredReactions, restoredSettings, restoredTips, SETTINGS_KEY, STORE_KEY, TURNS_KEY, withLastTurn } from './tips/store'
+import type { Changes, LastTurn, Saved, Settings } from './tips/store'
 import { fixedCosts, freshTurn, noteOutput, turnReport } from './tips/turns'
 import type { ToolOutcome, TurnWork } from './tips/turns'
 
@@ -154,6 +154,7 @@ let isInteractive = true
 // Main turns Claude answered in this process: rate limits come only with an answer.
 let answeredTurns = 0
 let isCompacting = false
+let isSessionOpen = false
 let storeWork: Promise<unknown> = Promise.resolve()
 let openLesson: LessonTopic | null = null
 // The instruction files the last breakdown listed. Kept across a /clear: a new conversation counts
@@ -209,6 +210,7 @@ async function startHere($: EngineInterface, cwd: string, isSessionInteractive: 
 async function startSession($: EngineInterface, { isClear = false }: { isClear?: boolean } = {}) {
   const sessionId = await $.session.id()
   cancelExpiryTimers()
+  isSessionOpen = true
   session = freshSession(sessionId)
   turnWork = freshTurn()
   if (!isClear) {
@@ -224,6 +226,7 @@ async function startSession($: EngineInterface, { isClear = false }: { isClear?:
 }
 
 function endConversation($: EngineInterface, reason: string) {
+  isSessionOpen = false
   cancelExpiryTimers()
   if (reason === 'clear' || reason === 'resume') {
     detach(switchConversation($, { isBetweenMessages: true }))
@@ -346,7 +349,11 @@ async function checkDuplicates($: EngineInterface, paths: string[]) {
 }
 
 function noteRequest(origin: string, text: string | undefined) {
-  if (REQUEST_ORIGINS.has(origin) && text !== undefined && !text.trimStart().startsWith('/')) {
+  if (!REQUEST_ORIGINS.has(origin)) {
+    return
+  }
+  session.keepAlivesInARow = 0
+  if (text !== undefined && !text.trimStart().startsWith('/')) {
     session.lastRequest = text
   }
 }
@@ -463,10 +470,7 @@ async function afterCompaction($: EngineInterface) {
 }
 
 function cancelExpiryTimers() {
-  for (const timer of session.expiryTimers) {
-    timer.cancel()
-  }
-  session.expiryTimers = []
+  session.cancelExpiry()
 }
 
 // Before the break outlasts the cache: shortly before, an offer to compact while it is cheap; once
@@ -477,7 +481,23 @@ function armExpiryTimers($: EngineInterface, now: number) {
   const answeredAt = figures.lastAnswerAt
   const context = figures.lastContextTokens
   // A turn already running (a queued message, a task's notice) is no break: its own end arms them.
-  if (!isTipping || isTurnRunning() || ttl === null || answeredAt === null || context === null) {
+  if (!isSessionOpen || isTurnRunning() || isCompacting || ttl === null || answeredAt === null || context === null) {
+    return
+  }
+  let isArmed = true
+  const timers: Timer[] = []
+  session.cancelExpiry = () => {
+    isArmed = false
+    for (const timer of timers) {
+      timer.cancel()
+    }
+  }
+  const isCurrent = () => isArmed
+  const actionTiming = cacheActionTiming(answeredAt, ttl)
+  if (actionTiming && now < actionTiming.expiresAt) {
+    timers.push($.clock.after(Math.max(0, actionTiming.actAt - now), () => detach(onCacheAction($, answeredAt, isCurrent))))
+  }
+  if (!isTipping) {
     return
   }
   const timing = breakTiming({ context, ttl, sessionKey: session.sessionKey, answeredAt })
@@ -486,19 +506,49 @@ function armExpiryTimers($: EngineInterface, now: number) {
   }
   const { expiresAt, warm, warmAt } = timing
   if (warm && warmAt > now) {
-    session.expiryTimers.push(
+    timers.push(
       $.clock.after(warmAt - now, () => {
-        if (!isTurnRunning()) {
+        if (isArmed && !isTurnRunning()) {
           detach(addTips($, [warm]))
         }
       }),
     )
   }
-  session.expiryTimers.push($.clock.after(Math.max(0, expiresAt - now) + 1000, () => detach(onExpired($, answeredAt))))
+  timers.push($.clock.after(Math.max(0, expiresAt - now) + 1000, () => detach(onExpired($, answeredAt))))
+}
+
+// Recheck after the waits: a turn, /clear, compaction or session end can invalidate an already
+// firing timer. A sleeping computer is never woken; a late callback skips a cache that went cold.
+async function onCacheAction($: EngineInterface, answeredAt: number, isCurrent: () => boolean) {
+  const action = await expiryAction($)
+  if (action === 'Do nothing' || (action === 'Keep cache warm' && session.keepAlivesInARow >= KEEP_ALIVES_IN_A_ROW)) {
+    return
+  }
+  const sessionId = await $.session.id()
+  const draft = await $.prompt.read()
+  const ttl = await readTtl($, figures.previousModel)
+  const now = await $.clock.now()
+  const timing = cacheActionTiming(answeredAt, ttl)
+  if (!isCurrent() || !isSessionOpen || sessionId !== session.sessionId || answeredAt !== figures.lastAnswerAt || isTurnRunning() || isCompacting || draft.text.trim() !== '' || !timing || now < timing.actAt || now >= timing.expiresAt) {
+    return
+  }
+  if (action === 'Keep cache warm') {
+    session.keepAlivesInARow++
+    try {
+      const result = await $.prompt.submit({ text: KEEP_ALIVE_PROMPT })
+      if (result.drop !== undefined) {
+        $.ui.toast('Dividend cache keep-alive was blocked; no retry until the next answer.')
+      }
+    } catch {
+      $.ui.toast('Dividend could not send the cache keep-alive; no retry until the next answer.')
+    }
+  } else if (action === 'Auto compact' && isInteractive) {
+    $.ui.toast((await runCompaction($, '', { automatic: true })).text)
+  }
 }
 
 async function onExpired($: EngineInterface, answeredAt: number) {
-  if (answeredAt !== figures.lastAnswerAt || isTurnRunning() || figures.cacheTtl === null || figures.lastContextTokens === null) {
+  if (!isSessionOpen || answeredAt !== figures.lastAnswerAt || isTurnRunning() || figures.cacheTtl === null || figures.lastContextTokens === null) {
     return
   }
   const now = await $.clock.now()
@@ -551,6 +601,16 @@ async function rememberTurn($: EngineInterface, turn: LastTurn) {
   await $.store.set(TURNS_KEY, withLastTurn(await lastTurns($), session.sessionKey, turn))
 }
 
+async function expiryAction($: EngineInterface): Promise<CacheExpiryAction> {
+  return restoredSettings(await $.store.get(SETTINGS_KEY)).cacheExpiryAction
+}
+
+async function chooseExpiryAction($: EngineInterface, action: CacheExpiryAction) {
+  const settings: Settings = { cacheExpiryAction: action }
+  await serially(() => $.store.set(SETTINGS_KEY, settings))
+  $.ui.invalidate('ui.render')
+}
+
 async function refreshStatus($: EngineInterface) {
   const reacted = await read($, reactions)
   const unread = bandTips(await read($, tips), reacted, here(), tipSettings(), figures.lastMessageAt).length
@@ -595,12 +655,14 @@ async function react($: EngineInterface, tip: DividendTip, reaction: DividendRea
   await refreshStatus($)
 }
 
-// Everything Dividend saved goes: the tips and reactions, and each session's last-turn record. Every
-// session mirrors the store, so the others drop what they held at their next look.
+// Everything Dividend saved goes: the tips and reactions, each session's last-turn record and the
+// choice before the cache expires. Every session mirrors the store, so the others drop what they held
+// at their next look.
 async function reset($: EngineInterface) {
   await serially(async () => {
     await $.store.delete(STORE_KEY)
     await $.store.delete(TURNS_KEY)
+    await $.store.delete(SETTINGS_KEY)
     await update($, tips, () => [])
     await update($, reactions, () => ({}))
   })
@@ -615,7 +677,7 @@ async function runCommand($: EngineInterface, text: string): Promise<{ text?: st
   if (text === 'reset') {
     await reset($)
 
-    return { text: 'Tips cleared, and every kind of tip is back on.' }
+    return { text: 'Tips cleared, every kind of tip is back on, and Dividend does nothing before the cache expires.' }
   }
 
   // A command holds the turn it answers, so the compaction runs just after it.
@@ -654,8 +716,8 @@ async function sessionReport($: EngineInterface): Promise<string> {
   return cardText([...rows, ...waiting])
 }
 
-// The person's own call: compacting with a brief, between turns, never while one is going.
-async function runCompaction($: EngineInterface, extra: string): Promise<{ isDone: boolean; text: string }> {
+// Compacting with a brief, between turns. Only a manual call may draft a fallback into the prompt box.
+async function runCompaction($: EngineInterface, extra: string, { automatic = false }: { automatic?: boolean } = {}): Promise<{ isDone: boolean; text: string }> {
   if (isTurnRunning()) {
     return { isDone: false, text: 'Compaction runs between turns; try again once Claude has answered.' }
   }
@@ -674,7 +736,7 @@ async function runCompaction($: EngineInterface, extra: string): Promise<{ isDon
     return { isDone: true, text: `Compacted${sizes}.` }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return !isInteractive || NO_DIRECT_COMPACTION.test(message) ? draftCompaction($, extra) : { isDone: false, text: `The compaction failed (${message}).` }
+    return !automatic && (!isInteractive || NO_DIRECT_COMPACTION.test(message)) ? draftCompaction($, extra) : { isDone: false, text: `The compaction failed (${plain(message, 300)}).` }
   } finally {
     isCompacting = false
   }
@@ -753,6 +815,7 @@ const viewActions = ($: EngineInterface) => ({
   openPane: () => void $.ui.open({ id: PANE, title: 'Dividend' }),
   openFile: (path: string) => void openFile($, path),
   toggleLesson: (topic: LessonTopic) => toggleLesson($, topic),
+  chooseExpiryAction: (action: CacheExpiryAction) => void chooseExpiryAction($, action),
 })
 
 const drawBand: MatchedHook<'ui.render', { component: 'AbovePrompt' }> = async ($, e, next) => {
@@ -787,5 +850,6 @@ const drawPane: MatchedHook<'ui.render', { component: 'Pane'; requestId: typeof 
   const all = shownTips(await read($, tips), reacted, here(), tipSettings())
   const seen = await read($, usage)
   const canCompact = isActing && !isTurnRunning()
-  return paneView($.ui.resolve(e), { all, reacted, seen, canCompact, isActing, openLesson }, viewActions($))
+  const chosen = await expiryAction($)
+  return paneView($.ui.resolve(e), { all, reacted, seen, canCompact, isActing, openLesson, expiryAction: chosen, isInteractive }, viewActions($))
 }

@@ -29,17 +29,19 @@ Tips come in three areas. The prompt cache: when it went cold and why, and a wor
 
 Dividend's plugin options: `tips` (all of them), `cache`, `context` and `limits` (one area each), `actions` (the *Compact now* and *Ask Claude* buttons), all on by default, and `budgetUsd` (0, off).
 
+**Before the prompt cache expires** is chosen in the `/dividend` pane, for every session on this machine: *Do nothing* (default), *Keep cache warm* (shortly before the cache expires, a short message asking Claude to reply OK), or *Auto compact* (once, in a terminal session). Both automatic choices use your plan's allowance or API budget, and act only in an idle session with an empty prompt box.
+
 ## What Dividend does on your machine
 
 Dividend is a Claude Code mod: JavaScript that Claude Code runs inside itself, with your user permissions. Claude Code's permission rules and sandbox cover Claude's own tool calls, not a mod, so this is the whole of what Dividend does:
 
 - **It runs on its own.** Its hooks run automatically as Claude Code starts and ends a session, starts and completes a turn, runs a tool, reports usage, compacts, and on a timer during a break.
-- **It sends nothing anywhere.** No HTTP requests and no telemetry of its own, and it never calls the model on its own. What `/dividend session` and `/dividend learn` print becomes part of the conversation, as any command's output does.
+- **It sends nothing anywhere.** No HTTP requests and no telemetry of its own, and it calls the model only for the cache action you choose. What `/dividend session` and `/dividend learn` print becomes part of the conversation, as any command's output does.
 - **It reads the instruction files Claude Code has already loaded** (CLAUDE.md, AGENTS.md, rules, memory), once a session, to find a line repeated across them. It doesn't read them while that tip is turned off.
 - **It starts one program, only when you press a button:** your system's file opener, for the instruction file you pressed in the pane, and only for a regular file (not a link) whose real name ends in `.md`, `.markdown` or `.txt`; anything else, such as a script an `@import` pulled in, is shown by its path instead. On macOS it opens as text (`open -t`), elsewhere with `xdg-open`, on Windows with `explorer.exe`. The path is passed as an argument with no shell in between, and the opener starts in your home folder.
 - **What it shows is plain text.** File names, the program a command ran, a page's host and quoted lines are stripped of control, bidi and zero-width characters before Dividend shows or saves them.
 - **The compaction brief quotes only what you sent**, never another session's message, a channel's or a notification. *Ask Claude* drafts what to do without quoting any file's content.
-- **It acts on the conversation only when you press a button.** *Compact now* and `/dividend compact` run Claude Code's own compaction. *Ask Claude* puts a request in your prompt box; you decide whether to send it.
+- **It acts on the conversation only when you press a button, or as the cache action you chose.** *Compact now* and `/dividend compact` run Claude Code's own compaction. *Ask Claude* puts a request in your prompt box; you decide whether to send it.
 
 ## What Dividend keeps
 
@@ -49,5 +51,6 @@ Dividend keeps its data in Claude Code's plugin store, a JSON file of its own un
 - **Your reactions:** which tips you read and which kinds you turned off; read tips stay marked read for up to 300 tips after they leave the list. *Later* is never saved.
 - **Tips taken back:** up to 200 ids, so a tip that no longer holds doesn't come back.
 - **Each session's last turn:** up to 20 sessions, each under a hash of its session id, with the model, the effort level, the plan Dividend read off the limits, and the time Claude last answered. A resumed session uses it to tell an expired cache from a model switch.
+- **Your choice before the prompt cache expires**, once you make one.
 
 All of it stays until `/dividend reset`, which deletes everything Dividend saved.
