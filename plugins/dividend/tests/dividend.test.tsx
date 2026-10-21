@@ -3,6 +3,7 @@ import type { Engine, MockClock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { keyOf } from '../hooks/display/format'
+import { KEEP_ALIVE_PROMPT } from '../hooks/tips/cache'
 
 const SITE = { bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} }
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 12, ...SITE }
@@ -49,7 +50,11 @@ const makeWorld = (on: On, clock: MockClock, stored: Record<string, unknown> = {
     openExit: 0,
     draft: '',
     fills: [] as { text: string; mode?: string }[],
-    isFillable: true
+    isFillable: true,
+    submissions: [] as string[],
+    promptError: false,
+    promptDrop: false,
+    promptReadDelayMs: 0
   }
   on('store.get', (_$, e) => ({ value: w.store[e.key] }) as never)
   on('store.set', async (_$, e) => {
@@ -95,12 +100,22 @@ const makeWorld = (on: On, clock: MockClock, stored: Record<string, unknown> = {
     w.compactInstructions.push((e as { instructions?: string }).instructions)
     return w.compactResult as never
   })
-  on('prompt.submit', (_$, e) => ({ text: e.text }) as never)
+  on('prompt.submit', (_$, e) => {
+    if (e.origin.kind === 'plugin') {
+      if (w.promptError) throw new Error('unavailable')
+      w.submissions.push(e.text)
+      if (w.promptDrop) return { drop: 'blocked' }
+    }
+    return { text: e.text, origin: e.origin } as never
+  })
   on('fs.stat', (_$, e) => ({ value: w.stats[e.path] ?? { kind: 'file', size: 10, mtimeMs: 0, isLink: false, realPath: e.path } }) as never)
   on('fs.exists', () => ({ value: w.isMac }) as never)
   on('session.measure', (_$, e) => ({ changed: e.changed }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
-  on('prompt.read', () => ({ value: { text: w.draft, cursor: w.draft.length } }) as never)
+  on('prompt.read', async () => {
+    if (w.promptReadDelayMs) await clock.sleep(w.promptReadDelayMs)
+    return { value: { text: w.draft, cursor: w.draft.length } } as never
+  })
   on('prompt.fill', (_$, e) => {
     w.fills.push({ text: e.text, mode: e.mode })
     return { isFilled: w.isFillable, text: e.text, cursor: e.text.length } as never
@@ -473,6 +488,246 @@ const SEAT: Reading = {
   rateLimits: [{ kind: 'five_hour', percentUsed: 20, resetsAt: new Date(NOW + 4 * 3600 * 1000).toISOString() }],
   cost: { usd: 1.0 }
 }
+
+const chosen = (action: string) => ({ 'dividend-settings': { cacheExpiryAction: action } })
+
+for (const stored of [{}, chosen('Do nothing'), chosen('invalid'), { 'dividend-settings': 'Keep cache warm' }]) {
+  test(`cache policy ${JSON.stringify(stored)} leaves an idle session alone`, async ($, on) => {
+    const { clock, w } = await start($, on, 'terminal', stored, SEAT)
+    await turn($, clock)
+    await clock.advance(61 * 60_000)
+    await settle(clock)
+    expect(w.submissions).toEqual([])
+    expect(w.compactions).toBe(0)
+  })
+}
+
+test('keep-alive submits a fixed plugin prompt at 50 minutes, then rearms after its answer', { options: { tips: false, cache: false, actions: false } }, async ($, on) => {
+  const { clock, w } = await start($, on, 'terminal', chosen('Keep cache warm'), SEAT)
+  await say($, 'add the export button')
+  await turn($, clock)
+  await clock.advance(49 * 60_000)
+  await settle(clock)
+  expect(w.submissions).toEqual([])
+  await clock.advance(60_000)
+  await settle(clock)
+  expect(w.submissions).toEqual([KEEP_ALIVE_PROMPT])
+  expect(w.fills).toEqual([])
+  await turn($, clock)
+  await clock.advance(50 * 60_000)
+  await settle(clock)
+  expect(w.submissions).toEqual([KEEP_ALIVE_PROMPT, KEEP_ALIVE_PROMPT])
+  await turn($, clock)
+  await $.command.run({ command: 'dividend', args: 'compact' } as never)
+  await settle(clock)
+  expect(w.compactInstructions.at(-1)).toContain('the person\'s latest request: "add the export button"')
+})
+
+test("keep-alive stops after 5 in a row, and only the person's own message starts the count again", async ($, on) => {
+  const { clock, w } = await start($, on, 'terminal', chosen('Keep cache warm'), SEAT)
+  await turn($, clock)
+  for (let i = 0; i < 5; i++) {
+    await clock.advance(50 * 60_000)
+    await settle(clock)
+    await turn($, clock)
+  }
+  expect(w.submissions.length).toBe(5)
+  await clock.advance(50 * 60_000)
+  await settle(clock)
+  expect(w.submissions.length).toBe(5)
+  await say($, 'build finished', 'task-notification')
+  await turn($, clock)
+  await clock.advance(50 * 60_000)
+  await settle(clock)
+  expect(w.submissions.length).toBe(5)
+  await say($, 'back, carry on')
+  await turn($, clock)
+  await clock.advance(50 * 60_000)
+  await settle(clock)
+  expect(w.submissions).toEqual(Array(6).fill(KEEP_ALIVE_PROMPT))
+})
+
+test('keep-alive runs at four minutes for a small conversation on a five-minute cache', async ($, on) => {
+  const { clock, w } = await start($, on, 'terminal', chosen('Keep cache warm'))
+  await turn($, clock)
+  await clock.advance(239_000)
+  await settle(clock)
+  expect(w.submissions).toEqual([])
+  await clock.advance(1000)
+  await settle(clock)
+  expect(w.submissions).toEqual([KEEP_ALIVE_PROMPT])
+})
+
+test('automatic compaction uses the brief once and never submits a keep-alive', { options: { tips: false, actions: false } }, async ($, on) => {
+  const { clock, w } = await start($, on, 'terminal', chosen('Auto compact'), SEAT)
+  await say($, 'add the export button')
+  await turn($, clock)
+  await clock.advance(50 * 60_000)
+  await settle(clock)
+  expect(w.compactions).toBe(1)
+  expect(w.compactInstructions[0]).toContain('add the export button')
+  await clock.advance(2 * 3600_000)
+  await settle(clock)
+  expect(w.compactions).toBe(1)
+  expect(w.submissions).toEqual([])
+  expect(w.fills).toEqual([])
+})
+
+for (const action of ['Keep cache warm', 'Auto compact']) {
+  for (const interruption of ['draft', 'turn', 'end', 'changed session', 'sleep', 'TTL shortened', 'compaction']) {
+    test(`${action} skips after ${interruption}`, async ($, on) => {
+      const { clock, w } = await start($, on, 'terminal', chosen(action), SEAT)
+      await turn($, clock)
+      if (interruption === 'draft') w.draft = 'half-written thought'
+      if (interruption === 'turn') await $.turn.start({ text: 'working', turnId: 'running' } as never)
+      if (interruption === 'end') await $.session.end({ reason: 'exit', sessionId: w.sessionId } as never)
+      if (interruption === 'changed session') w.sessionId = 'another-session'
+      if (interruption === 'TTL shortened') w.settings = { promptCacheTtl: '5m' }
+      // A pending host call resumes after the computer wakes; the action must use the time then.
+      if (interruption === 'sleep') w.promptReadDelayMs = 11 * 60_000
+      if (interruption === 'compaction') await $.session.compact({ trigger: 'manual', messages: [SUMMARY] })
+      await settle(clock)
+      await clock.advance((interruption === 'sleep' ? 61 : 50) * 60_000)
+      await settle(clock)
+      expect(w.submissions).toEqual([])
+      expect(w.compactions).toBe(interruption === 'compaction' ? 1 : 0)
+      expect(w.fills).toEqual([])
+      if (interruption === 'draft') expect(w.draft).toBe('half-written thought')
+    })
+  }
+
+  test(`${action} does nothing with caching disabled`, async ($, on) => {
+    const { clock, w } = await start($, on, 'terminal', chosen(action), SEAT, { DISABLE_PROMPT_CACHING: '1' })
+    await turn($, clock)
+    await clock.advance(61 * 60_000)
+    await settle(clock)
+    expect(w.submissions).toEqual([])
+    expect(w.compactions).toBe(0)
+  })
+
+  test(`${action} does not guess the lifetime of a resumed cache`, async ($, on) => {
+    const { clock, w } = await start($, on, 'terminal', { ...lastAnswer('claude-haiku-4-5', 9), ...chosen(action) }, RESUMED)
+    await clock.advance(51 * 60_000)
+    await settle(clock)
+    expect(w.submissions).toEqual([])
+    expect(w.compactions).toBe(0)
+  })
+
+  test(`${action} discards a firing timer when a compaction finishes meanwhile`, async ($, on) => {
+    const { clock, w } = await start($, on, 'terminal', chosen(action), SEAT)
+    await turn($, clock)
+    w.promptReadDelayMs = 1000
+    await clock.advance(50 * 60_000)
+    await $.session.compact({ trigger: 'manual', messages: [SUMMARY] })
+    await clock.advance(1000)
+    await settle(clock)
+    expect(w.submissions).toEqual([])
+    expect(w.compactions).toBe(1)
+  })
+
+  test(`${action} discards a firing timer when a newer turn finishes`, async ($, on) => {
+    const { clock, w } = await start($, on, 'terminal', chosen(action), SEAT)
+    await turn($, clock)
+    w.promptReadDelayMs = 1000
+    await clock.advance(50 * 60_000)
+    await turn($, clock)
+    await clock.advance(1000)
+    await settle(clock)
+    expect(w.submissions).toEqual([])
+    expect(w.compactions).toBe(0)
+  })
+}
+
+for (const failure of ['skip', 'error', 'headless error']) {
+  test(`automatic compaction handles ${failure} without drafting or retrying`, async ($, on) => {
+    const { clock, w } = await start($, on, 'terminal', chosen('Auto compact'), SEAT)
+    if (failure === 'skip') w.compactResult = { skip: 'a hook said no' }
+    else w.compactError = failure === 'headless error' ? '$.session.compact: not available in a headless session' : 'unavailable'
+    await turn($, clock)
+    await clock.advance(50 * 60_000)
+    await settle(clock)
+    expect(w.toasts.at(-1)).toContain(failure === 'skip' ? 'skipped' : 'failed')
+    expect(w.fills).toEqual([])
+    const attempts = w.compactions
+    await clock.advance(61 * 60_000)
+    await settle(clock)
+    expect(w.compactions).toBe(attempts)
+  })
+}
+
+test('automatic compaction skips SDK and desktop sessions without filling their prompt', async ($, on) => {
+  const { clock, w } = await start($, on, 'desktop', chosen('Auto compact'), SEAT)
+  await $.session.start({ cwd: '/work/repo', surface: 'desktop', isInteractive: false })
+  await settle(clock)
+  await turn($, clock)
+  await clock.advance(50 * 60_000)
+  await settle(clock)
+  expect(w.compactions).toBe(0)
+  expect(w.submissions).toEqual([])
+  expect(w.fills).toEqual([])
+})
+
+for (const failure of ['error', 'drop']) {
+  test(`keep-alive handles a prompt ${failure} once`, async ($, on) => {
+    const { clock, w } = await start($, on, 'terminal', chosen('Keep cache warm'), SEAT)
+    w.promptError = failure === 'error'
+    w.promptDrop = failure === 'drop'
+    await turn($, clock)
+    await clock.advance(50 * 60_000)
+    await settle(clock)
+    expect(w.toasts.at(-1)).toContain('no retry until the next answer')
+    await clock.advance(61 * 60_000)
+    await settle(clock)
+    expect(w.submissions.length).toBe(failure === 'error' ? 0 : 1)
+    expect(w.compactions).toBe(0)
+  })
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the pane picks what happens before the cache expires, and an idle session follows it at once (${surface})`, async ($, on) => {
+    const { clock, w } = await start($, on, surface, {}, SEAT)
+    await turn($, clock)
+    const pane = await $.ui.mount({ plugin: 'dividend', surface, component: 'Pane', requestId: 'dividend', props: PANE })
+    expect(await pane.find({ text: 'Before the prompt cache expires' })).toBeDefined()
+    expect(await pane.find({ text: /^Dividend only shows tips/ })).toBeDefined()
+    await pane.press({ key: 'dividend-expiry-warm' })
+    await settle(clock)
+    await pane.redraw()
+    expect(w.store['dividend-settings']).toEqual({ cacheExpiryAction: 'Keep cache warm' })
+    expect(await pane.find({ text: /^Shortly before the cache expires, Dividend sends a short message/ })).toBeDefined()
+    await clock.advance(50 * 60_000)
+    await settle(clock)
+    expect(w.submissions).toEqual([KEEP_ALIVE_PROMPT])
+  })
+}
+
+test('Do nothing picked in another session stops the keep-alive this one had armed', async ($, on) => {
+  const { clock, w } = await start($, on, 'terminal', chosen('Keep cache warm'), SEAT)
+  await turn($, clock)
+  w.store['dividend-settings'] = { cacheExpiryAction: 'Do nothing' }
+  await clock.advance(50 * 60_000)
+  await settle(clock)
+  expect(w.submissions).toEqual([])
+})
+
+test('/dividend reset goes back to doing nothing before the cache expires', async ($, on) => {
+  const { clock, w } = await start($, on, 'terminal', chosen('Keep cache warm'), SEAT)
+  await turn($, clock)
+  await $.command.run({ command: 'dividend', args: 'reset' } as never)
+  await settle(clock)
+  expect(w.store['dividend-settings']).toBeUndefined()
+  await clock.advance(50 * 60_000)
+  await settle(clock)
+  expect(w.submissions).toEqual([])
+})
+
+test('a desktop pane says its sessions skip Auto compact', async ($, on) => {
+  const { clock } = await start($, on, 'desktop', chosen('Auto compact'), SEAT)
+  await $.session.start({ cwd: '/work/repo', surface: 'desktop', isInteractive: false })
+  await settle(clock)
+  const pane = await $.ui.mount({ plugin: 'dividend', surface: 'desktop', component: 'Pane', requestId: 'dividend', props: PANE })
+  expect(await pane.find({ text: /^Desktop and SDK sessions like this one skip it/ })).toBeDefined()
+})
 
 test('a break in a big conversation brings an offer to compact before the cache lapses, then a warning once it has', async ($, on) => {
   const { clock, w } = await start($, on)

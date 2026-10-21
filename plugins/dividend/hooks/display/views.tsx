@@ -5,6 +5,8 @@ import type { ElementTable } from 'claude-code'
 
 import type { DividendReaction, DividendTip, DividendUsage } from '../../types'
 import { askFor } from '../tips/asks'
+import { CACHE_EXPIRY_ACTIONS, KEEP_ALIVES_IN_A_ROW } from '../tips/cache'
+import type { CacheExpiryAction } from '../tips/cache'
 import { keyOf, tokens } from './format'
 import { LESSON_TOPICS, lessonOf } from './lessons'
 import type { LessonTopic } from './lessons'
@@ -21,6 +23,14 @@ const REACTION_LABEL: Record<DividendReaction, string> = {
   seen: 'read',
   'not-relevant': "this kind won't show again",
   later: 'saved for later',
+}
+
+const EXPIRY_KEY: Record<CacheExpiryAction, string> = { 'Do nothing': 'nothing', 'Keep cache warm': 'warm', 'Auto compact': 'compact' }
+
+const EXPIRY_TEXT: Record<CacheExpiryAction, string> = {
+  'Do nothing': 'Dividend only shows tips. It sends nothing and compacts nothing on its own.',
+  'Keep cache warm': `Shortly before the cache expires, Dividend sends a short message asking Claude to reply OK, so your next message can still read the cache. Each one uses your plan or API budget. It sends up to ${KEEP_ALIVES_IN_A_ROW} in a row, then waits for your next message.`,
+  'Auto compact': 'Shortly before the cache expires, Dividend compacts the conversation once, with a brief to carry on from. It uses your plan or API budget.',
 }
 
 // What a tip offers, in order: its action, Ask Claude where Claude can act on it, Got it and Don't show
@@ -75,8 +85,8 @@ export const cardView = ({ Box, Text }: Pick<Elements, 'Box' | 'Text'>, rows: Ro
 
 export const paneView = (
   { Box, Button, Text }: Elements,
-  { all, reacted, seen, canCompact, isActing, openLesson }: { all: DividendTip[]; reacted: Record<string, DividendReaction>; seen: DividendUsage | null; canCompact: boolean; isActing: boolean; openLesson: LessonTopic | null },
-  act: TipActions & { openFile: (path: string) => void; toggleLesson: (topic: LessonTopic) => void },
+  { all, reacted, seen, canCompact, isActing, openLesson, expiryAction, isInteractive }: { all: DividendTip[]; reacted: Record<string, DividendReaction>; seen: DividendUsage | null; canCompact: boolean; isActing: boolean; openLesson: LessonTopic | null; expiryAction: CacheExpiryAction; isInteractive: boolean },
+  act: TipActions & { openFile: (path: string) => void; toggleLesson: (topic: LessonTopic) => void; chooseExpiryAction: (action: CacheExpiryAction) => void },
 ) => {
   const cache = seen ? cacheRow(seen) : null
   const scopes = seen ? instructionScopes(seen) : []
@@ -136,8 +146,26 @@ export const paneView = (
         )
       })}
       <Box flexDirection="column">
+        <Text bold>Before the prompt cache expires</Text>
+        <Box gap={1} flexWrap="wrap" marginY={1}>
+          {CACHE_EXPIRY_ACTIONS.map(action => (
+            <Button
+              key={`dividend-expiry-${EXPIRY_KEY[action]}`}
+              label={action}
+              variant={expiryAction === action ? 'primary' : undefined}
+              onPress={() => act.chooseExpiryAction(action)}
+            />
+          ))}
+        </Box>
+        <Text dimColor wrap="wrap">{EXPIRY_TEXT[expiryAction]}</Text>
+        {expiryAction === 'Auto compact' && !isInteractive && (
+          <Text dimColor wrap="wrap">Desktop and SDK sessions like this one skip it; terminal sessions compact.</Text>
+        )}
+        <Text dimColor wrap="wrap">Your choice applies to every Claude Code session on this computer.</Text>
+      </Box>
+      <Box flexDirection="column">
         <Text bold>How it works</Text>
-        <Box gap={1} flexWrap="wrap">
+        <Box gap={1} flexWrap="wrap" marginTop={1}>
           {LESSON_TOPICS.map(topic => (
             <Button
               key={`dividend-learn-${topic}`}

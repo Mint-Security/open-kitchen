@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { LONGEST_TTL, expiredTip, isColdStart, isWarmStart, planOf, recacheTip, resolveTtl, ttlAdviceTip, ttlText, warmCompactTip } from '../hooks/tips/cache'
+import { CACHE_EXPIRY_ACTIONS, LONGEST_TTL, cacheActionTiming, expiredTip, isCacheExpiryAction, isColdStart, isWarmStart, planOf, recacheTip, resolveTtl, ttlAdviceTip, ttlText, warmCompactTip } from '../hooks/tips/cache'
 import type { TtlFacts, TurnFacts } from '../hooks/tips/cache'
 
 const facts = (patch: Partial<TtlFacts> = {}): TtlFacts => ({
@@ -13,6 +13,16 @@ const facts = (patch: Partial<TtlFacts> = {}): TtlFacts => ({
   useBedrock: undefined,
   plan: null,
   ...patch,
+})
+
+test('automatic cache actions default off and need a known, enabled cache', () => {
+  expect(CACHE_EXPIRY_ACTIONS.every(isCacheExpiryAction)).toBe(true)
+  expect([undefined, null, 'invalid', 'keep cache warm', 1].some(isCacheExpiryAction)).toBe(false)
+  expect(cacheActionTiming(1000, null)).toBeNull()
+  expect(cacheActionTiming(1000, LONGEST_TTL)).toBeNull()
+  expect(cacheActionTiming(1000, { seconds: 0, source: 'DISABLE_PROMPT_CACHING' })).toBeNull()
+  expect(cacheActionTiming(1000, { seconds: 300, source: 'api' })).toEqual({ actAt: 241_000, expiresAt: 301_000 })
+  expect(cacheActionTiming(1000, { seconds: 3600, source: 'subscription' })).toEqual({ actAt: 3_001_000, expiresAt: 3_601_000 })
 })
 
 test("the cache lifetime follows Claude Code's own order: override, variable, setting, switch, then the plan", () => {

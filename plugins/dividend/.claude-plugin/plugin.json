@@ -39,7 +39,7 @@
     "actions": {
       "type": "boolean",
       "title": "Action buttons",
-      "description": "Offer Compact now and Ask Claude buttons on the tips where they help. Dividend never compacts, or asks Claude anything, on its own.",
+      "description": "Offer Compact now and Ask Claude buttons on the tips where they help. They act only when you press them.",
       "default": true
     },
     "budgetUsd": {

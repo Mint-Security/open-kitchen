@@ -3,12 +3,14 @@
 
 import type { DividendReaction, DividendTip } from '../../types'
 import { plain } from '../display/format'
-import type { Plan } from './cache'
+import { isCacheExpiryAction } from './cache'
+import type { CacheExpiryAction, Plan } from './cache'
 import { tipKindOf } from './kinds'
 import type { TipKind } from './kinds'
 
 export const STORE_KEY = 'dividend'
 export const TURNS_KEY = 'dividend-turns'
+export const SETTINGS_KEY = 'dividend-settings'
 const TIPS_KEPT = 60
 const TURNS_KEPT = 20
 
@@ -32,6 +34,13 @@ export const asRecord = (value: unknown): Record<string, unknown> =>
 const asList = (value: unknown): unknown[] => (Array.isArray(value) ? value : [])
 
 const asStrings = (value: unknown): string[] => asList(value).filter((item): item is string => typeof item === 'string')
+
+export type Settings = { cacheExpiryAction: CacheExpiryAction }
+
+export const restoredSettings = (stored: unknown): Settings => {
+  const { cacheExpiryAction } = asRecord(stored)
+  return { cacheExpiryAction: isCacheExpiryAction(cacheExpiryAction) ? cacheExpiryAction : 'Do nothing' }
+}
 
 // Snoozes end with the session.
 export const restoredReactions = (reacted: unknown): Record<string, DividendReaction> =>
