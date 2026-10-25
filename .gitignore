@@ -4,3 +4,4 @@ dist/
 .claude-plugin/types/
 **/.claude-plugin/types/
 plugins/*/tsconfig.json
+node_modules/
