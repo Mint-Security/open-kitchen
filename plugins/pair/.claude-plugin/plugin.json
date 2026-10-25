@@ -1,0 +1,22 @@
+{
+  "name": "pair",
+  "displayName": "Pair",
+  "version": "0.1.0",
+  "description": "Share your Claude Code session with someone, peer to peer with no backend: they watch it live, drawn the way Claude Code draws it, and can talk to your Claude under their own name.",
+  "author": {
+    "name": "Mint Security",
+    "email": "opensource@mint.security"
+  },
+  "homepage": "https://github.com/Mint-Security/open-kitchen/tree/main/plugins/pair",
+  "repository": "https://github.com/Mint-Security/open-kitchen",
+  "license": "Apache-2.0",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "displayName": {
+      "type": "string",
+      "title": "Your name",
+      "description": "The name your prompts show under. Leave empty to show Host.",
+      "default": ""
+    }
+  }
+}
