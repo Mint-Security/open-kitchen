@@ -1,0 +1,10 @@
+{
+  "name": "open-kitchen",
+  "private": true,
+  "scripts": {
+    "lint": "biome lint"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15"
+  }
+}

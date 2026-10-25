@@ -1,0 +1,21 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "files": {
+    "includes": ["**", "!plugins/*/.claude-plugin/types"]
+  },
+  "formatter": { "enabled": false },
+  "assist": { "enabled": false },
+  "linter": {
+    "rules": { "preset": "none" }
+  },
+  "overrides": [
+    {
+      "includes": ["plugins/*/hooks/**"],
+      "linter": { "rules": { "style": { "noNonNullAssertion": "error" } } }
+    },
+    {
+      "includes": ["plugins/*/tests/**"],
+      "linter": { "rules": { "style": { "noNonNullAssertion": "off" } } }
+    }
+  ]
+}

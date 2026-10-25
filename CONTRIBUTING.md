@@ -5,6 +5,8 @@ Thanks for helping. Issues and pull requests are welcome.
 ## Before you open a pull request
 
 ```bash
+npm ci
+npm run lint
 claude plugin validate .
 claude plugin validate plugins/dividend
 claude plugin test plugins/dividend
@@ -12,7 +14,7 @@ claude plugin validate plugins/pair
 claude plugin test plugins/pair
 ```
 
-All of them must pass; CI runs them on every push and pull request. Add a test for any behaviour you change: `plugins/dividend/tests/dividend.test.tsx` and `plugins/pair/tests/pair.test.tsx` drive each whole plugin through Claude Code's test kit, and the other test files cover the pure modules.
+All of them must pass; CI runs them on every push and pull request. The lint forbids non-null assertions (`x!`) in each plugin's `hooks/`: handle the missing value instead. Tests may use them. Add a test for any behaviour you change: `plugins/dividend/tests/dividend.test.tsx` and `plugins/pair/tests/pair.test.tsx` drive each whole plugin through Claude Code's test kit, and the other test files cover the pure modules.
 
 ## Dividend's ground rules
 
