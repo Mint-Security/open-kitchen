@@ -39,8 +39,11 @@ jobs:
         run: |
           claude plugin validate --strict .
           claude plugin validate --strict plugins/dividend
+          claude plugin validate --strict plugins/pair
       - name: Test
-        run: claude plugin test plugins/dividend
+        run: |
+          claude plugin test plugins/dividend
+          claude plugin test plugins/pair
       - name: Install from the marketplace, and run it
         run: |
           claude plugin marketplace add ./

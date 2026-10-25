@@ -1,0 +1,86 @@
+// The Pair pane as either side draws it, from plain values: the real pane and both halves of the
+// preview draw this, so the preview shows exactly what each person gets.
+
+import type { ElementTable, RenderElement, UiPressArgument } from 'claude-code'
+
+import type { PairEntry, PairPeerView } from '../types'
+import { drawTranscript } from './style/transcript'
+import type { TranscriptOptions } from './style/transcript'
+
+export type PaneElements = Pick<ElementTable, 'Box' | 'Text' | 'Markdown' | 'Code' | 'Button'> & { Input?: ElementTable<'terminal'>['Input'] }
+
+export type PaneModel = {
+  isHost: boolean
+  peer: PairPeerView | null
+  notices: { text: string; isError: boolean }[]
+  entries: PairEntry[]
+  // Rows kept out above the ones drawn.
+  earlier: number
+  transcript: TranscriptOptions
+  // Prefixes every key, so two panes can be drawn in one tree.
+  keys: string
+}
+
+export type PaneActions = {
+  more?: () => void
+  submit?: (text: string) => void
+  copy?: (press: UiPressArgument) => void
+  stop?: () => void
+}
+
+export const drawPairPane = (ui: PaneElements, m: PaneModel, act: PaneActions): RenderElement => {
+  const { Box, Button, Text } = ui
+  const { isHost, peer, keys } = m
+  const isOnline = peer !== null && !peer.hasLeft && peer.isOnline
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Box flexDirection="column">
+        <Text>
+          <Text bold>Pair</Text>
+          <Text dimColor>{` · ${isHost ? 'hosting' : 'watching'} ${peer ? peer.name : isHost ? 'nobody yet' : '…'} · `}</Text>
+          <Text color={isOnline ? 'green' : undefined} dimColor={!isOnline}>
+            {!peer ? (isHost ? 'waiting' : 'connecting') : peer.hasLeft ? 'left' : peer.isOnline ? 'online' : 'offline'}
+          </Text>
+          {!isHost && peer && !peer.hasLeft && peer.isWorking && (
+            <Text color="yellow">{` · Claude is working${peer.tool ? ` · ${peer.tool}` : ''}`}</Text>
+          )}
+        </Text>
+        {isHost && (
+          <Text dimColor wrap="wrap">
+            {'Your guest sees the whole session, tool output included, and what they send goes straight to Claude.'}
+          </Text>
+        )}
+        {!isHost && peer && (
+          <Text dimColor wrap="wrap">
+            {`What you send goes straight to ${peer.name}'s Claude.`}
+          </Text>
+        )}
+        {m.notices.map((notice, index) => (
+          <Text key={`${keys}-notice-${index}`} color={notice.isError ? 'red' : undefined} dimColor={!notice.isError} wrap="wrap">
+            {notice.text}
+          </Text>
+        ))}
+      </Box>
+
+      <Box flexDirection="column" gap={1}>
+        {m.earlier > 0 && (
+          <Box gap={1}>
+            <Text dimColor>{`… ${m.earlier} earlier ${m.earlier === 1 ? 'row' : 'rows'}`}</Text>
+            {act.more && <Button key={`${keys}-more`} label="Show more" onPress={act.more} />}
+          </Box>
+        )}
+        {m.entries.length === 0 && <Text dimColor>{isHost ? 'Nothing yet.' : 'Waiting for the host…'}</Text>}
+        {drawTranscript(ui, m.entries, { ...m.transcript, keys })}
+      </Box>
+
+      {!isHost && ui.Input && act.submit && (
+        <ui.Input key={`${keys}-input`} label="Ask Claude: " placeholder="goes straight to the host’s Claude" submitLabel="send" onSubmit={act.submit} />
+      )}
+
+      <Box gap={1}>
+        {isHost && act.copy && <Button key={`${keys}-copy`} label="Copy invite" onPress={act.copy} />}
+        {act.stop && <Button key={`${keys}-stop`} label={isHost ? 'Stop pairing' : 'Stop watching'} onPress={act.stop} />}
+      </Box>
+    </Box>
+  )
+}
