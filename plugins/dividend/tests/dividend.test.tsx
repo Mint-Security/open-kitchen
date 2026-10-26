@@ -21,6 +21,8 @@ type Reading = {
 const makeWorld = (on: On, clock: MockClock, stored: Record<string, unknown> = {}, env: Record<string, string> = {}) => {
   const w = {
     sessionId: 'session-one',
+    model: 'claude-opus-5-5',
+    promptsSent: 0,
     reading: { context: { tokens: 30_000, window: 200_000, percent: 15 }, rateLimits: [], cost: { usd: 0.4 } } as Reading,
     mcpTools: [] as { name: string; serverName: string; tokens: number; isLoaded: boolean }[],
     memoryFiles: [] as { path: string; type: string; tokens: number }[],
@@ -72,6 +74,8 @@ const makeWorld = (on: On, clock: MockClock, stored: Record<string, unknown> = {
   on('settings.read', () => ({ value: w.settings }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: w.sessionId }) as never)
+  on('session.model', () => ({ value: w.model }) as never)
+  on('session.turns', () => ({ value: w.promptsSent }) as never)
   on('session.usage', (_$, e) => {
     w.usageCalls++
     const isBreakdown = (e as { breakdown?: string }).breakdown !== undefined
@@ -933,6 +937,55 @@ test('three turns of only reading and editing on Opus suggest a lighter model', 
   expect(tipTitles(w)).toContain('This work runs well on a lighter model')
 })
 
+// A session that opens on the model w.model names, as the desktop app's new-session screen or `claude --model` starts one.
+const startOn = async ($: Engine, on: On, model: string, promptsSent = 0) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w = makeWorld(on, clock)
+  w.model = model
+  w.promptsSent = promptsSent
+  await $.session.start({ cwd: '/work/repo', surface: 'desktop', isInteractive: false })
+  await settle(clock)
+  return { clock, w }
+}
+
+for (const [model, name] of [['claude-fable-5-1', 'Fable 5.1'], ['claude-mythos-5-1[1m]', 'Mythos 5.1']] as const) {
+  test(`a session that opens on ${name} suggests Opus 5.5 above the prompt`, async ($, on) => {
+    const { clock } = await startOn($, on, model, 1)
+    const above = await band($, 'desktop')
+    expect(await above.find({ text: `This session starts on ${name}` })).toBeDefined()
+    expect(await above.find({ text: /^Opus 5\.5 handles most coding work well.*\/model claude-opus-5-5/ })).toBeDefined()
+    // It stays through turns on the model it is about, until read.
+    await turn($, clock, 1, { ...WARM, model })
+    await above.redraw()
+    expect(await above.find({ text: `This session starts on ${name}` })).toBeDefined()
+  })
+}
+
+test('a session that opens on Opus, or a resumed one on Fable, gets no word on the model', async ($, on) => {
+  const { clock, w } = await startOn($, on, 'claude-opus-5-5')
+  expect(tipTitles(w).some(title => title.startsWith('This session starts on'))).toBe(false)
+  w.sessionId = 'session-two'
+  w.model = 'claude-fable-5-1'
+  w.promptsSent = 12
+  await $.session.start({ cwd: '/work/repo', surface: 'desktop', isInteractive: false })
+  await settle(clock)
+  expect(tipTitles(w).some(title => title.startsWith('This session starts on'))).toBe(false)
+})
+
+test('switching to another model takes the word on the starting model back; a /clear on Fable says it again', async ($, on) => {
+  const { clock, w } = await startOn($, on, 'claude-fable-5-1')
+  expect(tipTitles(w)).toContain('This session starts on Fable 5.1')
+  w.model = 'claude-opus-5-5'
+  await turn($, clock, 1, { ...WARM, model: 'claude-opus-5-5' })
+  expect(tipTitles(w)).not.toContain('This session starts on Fable 5.1')
+
+  w.model = 'claude-fable-5-1'
+  w.sessionId = 'session-two'
+  await $.session.end({ reason: 'clear', sessionId: 'session-one' } as never)
+  await settle(clock)
+  expect(tipTitles(w)).toContain('This session starts on Fable 5.1')
+})
+
 test('an instruction repeated in two instruction files is named once per project', async ($, on) => {
   const { clock, w } = await start($, on)
   w.files = {
@@ -1604,6 +1657,7 @@ const KIND_IDS: Record<string, string> = {
   'rate-limit': `tip:rate-limit:five_hour:${RESET}`,
   wall: `tip:wall:seven_day:${RESET}`,
   'model-fit': `tip:model-fit:${SESSION_KEY}`,
+  'model-start': `tip:model-start:${SESSION_KEY}`,
   budget: `tip:budget:${SESSION_KEY}:5`,
 }
 const KINDS = Object.keys(KIND_IDS)
@@ -1649,7 +1703,7 @@ test('each kind of tip shows in its own session, project or account, and three o
 const AREAS: Record<string, string[]> = {
   cache: ['recache', 'switch', 'expired', 'warm-compact', 'ttl'],
   context: ['context', 'context-high', 'growth', 'breakpoint', 'reread', 'mcp', 'memory', 'dupes'],
-  limits: ['rate-limit', 'wall', 'model-fit', 'budget'],
+  limits: ['rate-limit', 'wall', 'model-fit', 'model-start', 'budget'],
 }
 for (const [area, kinds] of Object.entries(AREAS)) {
   test(`turning off ${area} tips hides exactly those kinds`, { options: { [area]: false } }, async ($, on) => {
@@ -1660,22 +1714,23 @@ for (const [area, kinds] of Object.entries(AREAS)) {
 
 test('every kind but unused MCP servers may interrupt, newest first', async ($, on) => {
   const { w } = await start($, on, 'terminal', everyKind())
-  expect(w.statuses.at(-1)).toBe('16 new')
+  expect(w.statuses.at(-1)).toBe('17 new')
   expect(await bandQueue($)).toEqual(newestFirst(['mcp']))
 })
 
 test('once a message goes, break warnings are taken back and news of a turn leaves the band', async ($, on) => {
   const { clock } = await start($, on, 'terminal', everyKind())
   await turn($, clock)
-  expect(await kindsIn(await pane($))).toEqual(KINDS.filter(kind => kind !== 'expired' && kind !== 'warm-compact'))
-  expect(await bandQueue($)).toEqual(newestFirst(['mcp', 'expired', 'warm-compact', 'recache', 'switch', 'growth']))
+  // The turn answered on Haiku, so the word on the starting model is taken back too.
+  expect(await kindsIn(await pane($))).toEqual(KINDS.filter(kind => kind !== 'expired' && kind !== 'warm-compact' && kind !== 'model-start'))
+  expect(await bandQueue($)).toEqual(newestFirst(['mcp', 'expired', 'warm-compact', 'model-start', 'recache', 'switch', 'growth']))
 })
 
 test('a compaction takes back the tips it answers', async ($, on) => {
   const { clock } = await start($, on, 'terminal', everyKind())
   await $.session.compact({ trigger: 'manual', messages: [SUMMARY] })
   await settle(clock)
-  expect(await kindsIn(await pane($))).toEqual(['ttl', 'mcp', 'memory', 'dupes', 'rate-limit', 'wall', 'model-fit', 'budget'])
+  expect(await kindsIn(await pane($))).toEqual(['ttl', 'mcp', 'memory', 'dupes', 'rate-limit', 'wall', 'model-fit', 'model-start', 'budget'])
 })
 
 test('a /clear starts over what the conversation counted', async ($, on) => {

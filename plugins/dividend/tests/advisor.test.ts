@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { duration, keyOf, tokens } from '../hooks/display/format'
 import { instructionScopes, sessionRows, usageLine } from '../hooks/display/status'
-import { modelFitTip, usageTips } from '../hooks/tips/advisor'
+import { heaviestModelName, modelFitTip, startModelTip, usageTips } from '../hooks/tips/advisor'
 import type { UsageContext } from '../hooks/tips/advisor'
 import { tipKindOf } from '../hooks/tips/kinds'
 import type { DividendUsage } from '../types'
@@ -205,4 +205,18 @@ test('three turns of only reading and editing on Opus suggest a lighter model', 
   expect(modelFitTip({ lightTurns: 3, model: 'claude-opus-5-5', effort: 'max', sessionKey: 's1' })?.body.startsWith('The last 3 turns only read, searched and edited files, on claude-opus-5-5 at max effort.')).toBe(true)
   expect(modelFitTip({ lightTurns: 2, model: 'claude-opus-5-5', effort: null, sessionKey: 's1' })).toBeNull()
   expect(modelFitTip({ lightTurns: 5, model: 'claude-sonnet-5-5', effort: null, sessionKey: 's1' })).toBeNull()
+})
+
+test('Mythos and Fable are named as the model menu shows them; a session on them hears of Opus 5.5', () => {
+  expect(heaviestModelName('claude-fable-5-1')).toBe('Fable 5.1')
+  expect(heaviestModelName('claude-mythos-5-1[1m]')).toBe('Mythos 5.1')
+  expect(heaviestModelName('Fable 5.1')).toBe('Fable 5.1')
+  expect(heaviestModelName('fable')).toBe('Fable')
+  for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'opus', 'claude-haiku-4-5']) {
+    expect(heaviestModelName(model)).toBeNull()
+    expect(startModelTip({ model, sessionKey: 's1' })).toBeNull()
+  }
+  const tip = startModelTip({ model: 'claude-fable-5-1', sessionKey: 's1' })
+  expect(tip).toMatchObject({ id: 'tip:model-start:s1', kind: 'model-start', title: 'This session starts on Fable 5.1' })
+  expect(tipKindOf(tip?.id ?? '')).toBe('model-start')
 })

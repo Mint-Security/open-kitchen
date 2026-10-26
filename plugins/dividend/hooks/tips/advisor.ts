@@ -220,6 +220,29 @@ export const modelFitTip = (fit: { lightTurns: number; model: string; effort: st
   }
 }
 
+// The models Opus 5.5 is suggested over, at a session's start, by how Claude Code names them.
+const HEAVIEST_MODEL = /\b(mythos|fable)(?:[- ](\d+)[-.](\d+))?/i
+
+// `claude-fable-5-1` as the model menu shows it, Fable 5.1; null for any other model.
+export const heaviestModelName = (model: string): string | null => {
+  const match = HEAVIEST_MODEL.exec(model)
+  if (!match?.[1]) return null
+  const version = match[2] && match[3] ? ` ${match[2]}.${match[3]}` : ''
+  return `${match[1].charAt(0).toUpperCase()}${match[1].slice(1).toLowerCase()}${version}`
+}
+
+// A conversation that opens on Mythos or Fable: switching while it is short re-caches little.
+export const startModelTip = (start: { model: string; sessionKey: string }): Tip | null => {
+  const name = heaviestModelName(start.model)
+  if (name === null) return null
+  return {
+    id: `tip:model-start:${start.sessionKey}`,
+    kind: 'model-start',
+    title: `This session starts on ${name}`,
+    body: `Opus 5.5 handles most coding work well and costs less: it goes further on a plan's limits, and is cheaper on API billing. Switch now, while the conversation is short and switching re-caches little: /model claude-opus-5-5, or the model menu in the desktop app. Keep ${name} for the work that needs it.`
+  }
+}
+
 const budgetTips = (usage: DividendUsage, ctx: UsageContext): Tip[] => {
   if (ctx.budgetUsd <= 0 || usage.costUsd === null || usage.costUsd < ctx.budgetUsd) return []
   const crossed = Math.floor(usage.costUsd / ctx.budgetUsd) * ctx.budgetUsd

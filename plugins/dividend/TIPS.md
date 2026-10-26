@@ -19,6 +19,7 @@ Each tip comes from what Claude Code reports, not from a price table of Dividend
 | Limits | Rate limit | the 5-hour or weekly limit is on pace to run out before it resets, or passes 80% |
 | Limits | Near the wall | a limit passes 95%: wrap up cleanly before it stops mid-task |
 | Limits | A lighter model | three turns in a row of only reading and editing, on Opus |
+| Limits | Opus 5.5 for most work | a new conversation (a session's start, or a `/clear`) opens on Mythos or Fable; taken back once a turn answers on another model |
 | Limits | Spend alert | off by default; each multiple of the `budgetUsd` setting at list price |
 
 A tip belongs to the session that raised it; the instruction-file tips belong to the project, and the limit tips to the account. *Don't show these* turns that kind of tip off everywhere. A compaction takes back the tips it answers, and news of a turn (a re-cache, a heavy output) leaves the band at your next message.
