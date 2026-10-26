@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## dividend 0.1.1
 
-- dividend: a session that opens on Mythos or Fable suggests Opus 5.5, while switching re-caches little. Turned off with the other limit tips, or by *Don't show these*.
+- A session that opens on Mythos or Fable suggests Opus 5.5, while switching re-caches little. Turned off with the other limit tips, or by *Don't show these*.
 
 ## dividend 0.1.0
 

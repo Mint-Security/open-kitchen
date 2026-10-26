@@ -1,7 +1,7 @@
 {
   "name": "dividend",
   "displayName": "Dividend",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Make sense of your Claude Code session's context, prompt cache, and usage limits through quick tips and short lessons. Insights come from what Claude Code reports; everything stays within your machine.",
   "author": {
     "name": "Mint Security",
