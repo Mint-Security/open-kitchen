@@ -13,7 +13,7 @@ import type { ToolCallFacts } from './display/tool-labels'
 import { bandView, cardView, paneView } from './display/views'
 import { BREAKDOWN_EVERY_TURNS, freshSession, noFigures, restoredFigures } from './state'
 import type { Figures, Opening } from './state'
-import { limitTips, usageTips } from './tips/advisor'
+import { heaviestModelName, limitTips, startModelTip, usageTips } from './tips/advisor'
 import type { UsageContext } from './tips/advisor'
 import { askFor } from './tips/asks'
 import { KEEP_ALIVE_PROMPT, KEEP_ALIVES_IN_A_ROW, LONGEST_TTL, breakTiming, cacheActionTiming, expiredTip, isEnvSet, planOf, resolveTtl } from './tips/cache'
@@ -204,6 +204,7 @@ async function startHere($: EngineInterface, cwd: string, isSessionInteractive: 
   await withdrawUnread($, id => isStaleBreakTip(id, session.sessionKey, figures.lastAnswerAt) || isPastLimitTip(id, now))
   await refreshStatus($)
   detach(checkResumed($))
+  detach(checkStartModel($))
 }
 
 // A fresh session starts from nothing; a resumed one from what it held and its last answer. Snoozes end here.
@@ -244,6 +245,7 @@ async function switchConversation($: EngineInterface, { isBetweenMessages }: { i
   $.ui.invalidate('ui.render')
   if (isBetweenMessages) {
     detach(checkResumed($))
+    detach(checkStartModel($))
   }
 }
 
@@ -261,6 +263,18 @@ async function checkResumed($: EngineInterface) {
     return
   }
   armExpiryTimers($, now)
+}
+
+// A conversation that opens on Mythos or Fable: a word on Opus 5.5 while switching costs little. The
+// desktop app starts a session with its first prompt; a resumed conversation, further on, gets none.
+async function checkStartModel($: EngineInterface) {
+  if ((await $.session.turns()) > 1) {
+    return
+  }
+  const tip = startModelTip({ model: await $.session.model(), sessionKey: session.sessionKey })
+  if (tip) {
+    await addTips($, [tip])
+  }
 }
 
 // How long the prompt cache lasts for the model in use, by Claude Code's own order of settings, else by the plan.
@@ -449,6 +463,9 @@ async function afterTurn($: EngineInterface, turn: TurnUsage | undefined, openin
     session.lightTurns = report.lightTurns
     if (report.isWarmBreak) {
       await withdrawUnread($, id => id === `tip:ttl:${session.sessionKey}`)
+    }
+    if (heaviestModelName(turn.model) === null) {
+      await withdrawUnread($, id => id === `tip:model-start:${session.sessionKey}`)
     }
     await addTips($, report.tips)
   }

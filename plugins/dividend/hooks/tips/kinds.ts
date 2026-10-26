@@ -26,6 +26,7 @@ const KINDS = {
   'rate-limit': { scope: 'account', area: 'limits' },
   wall: { scope: 'account', area: 'limits' },
   'model-fit': { scope: 'session', area: 'limits' },
+  'model-start': { scope: 'session', area: 'limits' },
   budget: { scope: 'session', area: 'limits' },
 } as const satisfies Record<string, KindFacts>
 
