@@ -4,7 +4,7 @@
 
 import type { ElementTable, RenderElement } from 'claude-code'
 
-import type { PairEntry } from '../../types'
+import type { PairEntry } from '../../../types'
 import { drawDesktop } from './desktop'
 import { drawTerminal } from './terminal'
 

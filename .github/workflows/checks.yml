@@ -57,6 +57,10 @@ jobs:
         run: |
           claude plugin test plugins/dividend
           claude plugin test plugins/pair
+      - name: Check the scripts
+        run: |
+          bash -n scripts/pair-sandbox.sh
+          node --check scripts/e2e-pair.mjs
       - name: Install from the marketplace, and run it
         run: |
           claude plugin marketplace add ./
@@ -64,3 +68,7 @@ jobs:
           claude plugin details dividend
           claude -p "/dividend session" < /dev/null | tee session.txt
           grep -q "Dividend · this session" session.txt
+          claude plugin install pair@mint-security
+          claude plugin details pair
+          claude -p "/pair log" < /dev/null | tee pair.txt
+          grep -q "pair: Not paired." pair.txt

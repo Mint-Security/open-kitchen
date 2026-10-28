@@ -1,7 +1,7 @@
 // What the host's transcript draws for a finished tool call, worked out from the call and its stored
 // result: `Label(args)` and the line, diff, preview or output under it. No `$` in here.
 
-import type { PairSpan, PairToolView } from '../../types'
+import type { PairSpan, PairToolView } from '../../../types'
 
 const ARGS_CAP = 240
 const LINE_CAP = 400

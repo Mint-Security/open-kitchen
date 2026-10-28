@@ -16,6 +16,15 @@
         "name": "Mint Security"
       },
       "license": "Apache-2.0"
+    },
+    {
+      "name": "pair",
+      "source": "./plugins/pair",
+      "description": "Share your Claude Code session with someone, peer to peer with no backend: they watch it live, drawn the way Claude Code draws it, and can talk to your Claude under their own name. It runs over a private Syncthing the plugin downloads on first use; no account needed.",
+      "author": {
+        "name": "Mint Security"
+      },
+      "license": "Apache-2.0"
     }
   ]
 }

@@ -4,8 +4,8 @@
 
 import type { SessionMessage } from 'claude-code'
 
-import type { PairEvent } from '../types'
-import { toolViewOf } from './style/tool-rows'
+import type { PairEvent } from '../../types'
+import { toolViewOf } from '../display/style/tool-rows'
 
 const TEXT_CAP = 30_000
 const HISTORY_EVENTS_CAP = 2000
