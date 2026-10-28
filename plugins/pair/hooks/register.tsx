@@ -1217,7 +1217,7 @@ async function startPairing($: EngineInterface): Promise<string> {
 
 async function redrawPreview($: EngineInterface) {
   previewVersion++
-  await update($, previewTickAtom, tick => tick + 1)
+  await update($, previewTickAtom, n => n + 1)
 }
 
 // The session so far, read once when the preview opens; whatever happens while it is read goes after it.
@@ -1276,7 +1276,7 @@ async function toggleExpanded($: EngineInterface, id: string) {
 
 async function showMorePreview($: EngineInterface) {
   previewRows += PREVIEW_MORE_ROWS
-  await update($, previewTickAtom, tick => tick + 1)
+  await update($, previewTickAtom, n => n + 1)
 }
 
 // The same as the preview's clicks, for a surface whose clicks do not reach a plugin.
@@ -1287,7 +1287,7 @@ async function previewCommand($: EngineInterface, arg: string): Promise<string> 
   else if (arg === 'all') previewRows = Number.MAX_SAFE_INTEGER
   else if (arg === 'open' || arg === 'close') arePreviewRowsOpen = arg === 'open'
   else return 'Use /pair preview more or all for earlier rows, and open or close for each tool call.'
-  await update($, previewTickAtom, tick => tick + 1)
+  await update($, previewTickAtom, n => n + 1)
   return arg === 'more'
     ? `The preview shows ${PREVIEW_MORE_ROWS} more rows.`
     : arg === 'all'
@@ -1413,7 +1413,9 @@ async function resolveName($: EngineInterface) {
 
 // The loop only runs while a pairing is open.
 function ensureTimer($: EngineInterface) {
-  if (!timer) timer = $.clock.every(TICK_MS, () => tick($))
+  if (timer) return
+  const ticking = $.clock.every(TICK_MS, () => tick($))
+  timer = ticking
 }
 
 function stopTimer() {
