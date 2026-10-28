@@ -63,6 +63,25 @@ An installed plugin does nothing until someone runs `/pair`: no timer, no networ
 - **Public infrastructure, no account.** The guest finds the host through Syncthing's global discovery servers and connects directly when it can (same network, reachable port), or through Syncthing's community relays when it can't. The guest looks the host up itself, every few seconds: Syncthing on its own waits half an hour before asking again about a device it has never seen. The host looks nobody up; it waits to be dialed.
 - Measured with both sides on one Mac: the host is reachable six seconds after its first `/pair` (download included), and the guest is watching six seconds after pasting the invite.
 
+## What Pair does on your machine
+
+Pair is a Claude Code mod: JavaScript that Claude Code runs inside itself, with your user permissions. Claude Code's permission rules and sandbox cover Claude's own tool calls, not a mod, so this is the whole of what Pair does:
+
+- **Nothing until `/pair`.** Installed, it adds the `/pair` command and its hooks, and starts no timer, program or network call. `/pair preview` runs nothing either.
+- **The programs it runs**, each a fixed command with its arguments and no shell in between, only while a pairing starts or is open:
+  - once per machine, to fetch Syncthing: `uname -sm`, to pick the release for this machine; `curl`, for the pinned Syncthing v2.1.6 archive from `github.com/syncthing/syncthing/releases`; `unzip` (macOS) or `tar` (Linux), to take only the `syncthing` binary out of it; `shasum -a 256` or `sha256sum`, to check the archive and the binary against their pinned SHA-256, and the binary again before every start; and `mkdir`, `chmod` and `mv`, to put it in place.
+  - for each pairing: `syncthing generate`, which makes this side's own identity; `syncthing device-id`, which reads back which device that is; `syncthing serve`, one process for as long as the pairing is open; and `mkdir`, `chmod` and `rm`, inside `~/.claude/pair` only.
+  - `id -un`, once, for your OS username when you haven't set a name.
+- **The files it writes**, all under `~/.claude/pair`: the Syncthing binary, and for each pairing a folder with a random name holding Syncthing's config, key and certificate (written before Syncthing first starts, and read by that Syncthing alone), the two shared folders, a log of Syncthing's output and an `alive` file, plus a socket. `/pair stop`, or the session's end, deletes the pairing's folder and socket.
+- **What it sends, and where:**
+  - to its own Syncthing, over a Unix socket only your user can open, with a random API key Pair makes for that process and passes in its environment, never on its command line;
+  - from the guest's side, to Syncthing's discovery server (`https://discovery-lookup.syncthing.net`), the host's device ID, to ask where it can be reached;
+  - through Syncthing, to the one guest who holds the invite: the session as the host's transcript shows it, sealed with keys from the invite. The two Syncthings connect directly or through Syncthing's community relays, and announce each machine's public address to Syncthing's discovery servers.
+  - Nothing to a server of ours, no telemetry, and no model calls of its own.
+- **What it reads:** this session's messages, to give a guest the session so far and to draw the preview; and, while you share, each prompt you send and each tool call and what it returned, to send them to your guest. It never changes or holds back a prompt or a tool call. Of the environment it reads only `HOME`, for where its files go. It reads no credential: the API key above is one it made for its own Syncthing.
+- **The prompts it submits:** on the host, a guest's message and nothing else, as `Dana (guest): <their text>`, stripped of invisible characters, at most 600 characters and 8 messages a minute.
+- **The clipboard:** it puts the invite there once a pairing is ready, and again when you press **Copy invite** or run `/pair invite`.
+
 ## Security model (POC)
 
 - **The invite is the whole capability.** Whoever holds it can join as the guest (while the seat is free), read the whole session, tool output included, and prompt the host's Claude. Share it privately. Typing `/pair <invite>` also puts it in your session transcript, and in anything that records your prompts, until the pairing ends.

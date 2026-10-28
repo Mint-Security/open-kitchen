@@ -1413,7 +1413,7 @@ async function resolveName($: EngineInterface) {
 
 // The loop only runs while a pairing is open.
 function ensureTimer($: EngineInterface) {
-  timer ??= $.clock.every(TICK_MS, () => tick($))
+  if (!timer) timer = $.clock.every(TICK_MS, () => tick($))
 }
 
 function stopTimer() {

@@ -1,5 +1,11 @@
 # Changelog
 
+## pair 0.1.1
+
+- A listing icon: two sprouts in one pot.
+- The README says what Pair does on your machine: the programs it runs and why, the files it writes, what it sends and where, what it reads, and the one kind of prompt it submits.
+- No change in what Pair does.
+
 ## pair 0.1.0
 
 First release candidate.
