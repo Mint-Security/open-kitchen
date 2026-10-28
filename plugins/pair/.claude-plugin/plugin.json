@@ -2,7 +2,7 @@
   "name": "pair",
   "displayName": "Pair",
   "version": "0.1.0",
-  "description": "Share your Claude Code session with someone, peer to peer with no backend: they watch it live, drawn the way Claude Code draws it, and can talk to your Claude under their own name.",
+  "description": "Share your Claude Code session with someone, peer to peer with no backend: they watch it live, drawn the way Claude Code draws it, and can talk to your Claude under their own name. It runs over a private Syncthing the plugin downloads on first use; no account needed.",
   "author": {
     "name": "Mint Security",
     "email": "opensource@mint.security"
@@ -15,7 +15,7 @@
     "displayName": {
       "type": "string",
       "title": "Your name",
-      "description": "The name your prompts show under. Leave empty to show Host.",
+      "description": "The name your messages go out under. Leave empty to use your OS username.",
       "default": ""
     }
   }

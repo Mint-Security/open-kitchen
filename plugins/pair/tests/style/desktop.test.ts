@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { desktopLabelOf } from '../../hooks/style/desktop'
-import { toolViewOf } from '../../hooks/style/tool-rows'
+import { desktopLabelOf } from '../../hooks/display/style/desktop'
+import { toolViewOf } from '../../hooks/display/style/tool-rows'
 
 const call = (tool: string, input: Record<string, unknown>, result: unknown = {}, isError = false) => ({
   tool,

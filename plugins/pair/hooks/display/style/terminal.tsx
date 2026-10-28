@@ -3,7 +3,7 @@
 
 import type { RenderElement } from 'claude-code'
 
-import type { PairEntry, PairSpan, PairToolView } from '../../types'
+import type { PairEntry, PairSpan, PairToolView } from '../../../types'
 import type { Elements, TranscriptOptions } from './transcript'
 
 // As the transcript does: tool output wrapped ten columns short of the width, three lines of it shown

@@ -5,8 +5,8 @@ import {
   eventsFromHistory,
   eventsFromRow,
   promptEventOf
-} from '../hooks/mirror'
-import type { AppendedRow } from '../hooks/mirror'
+} from '../hooks/session/mirror'
+import type { AppendedRow } from '../hooks/session/mirror'
 import type { PairEvent, PairToolView } from '../types'
 
 type Block = Exclude<AppendedRow['message']['content'], string>[number]

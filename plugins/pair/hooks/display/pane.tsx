@@ -3,7 +3,7 @@
 
 import type { ElementTable, RenderElement, UiPressArgument } from 'claude-code'
 
-import type { PairEntry, PairPeerView } from '../types'
+import type { PairEntry, PairPeerView } from '../../types'
 import { drawTranscript } from './style/transcript'
 import type { TranscriptOptions } from './style/transcript'
 
@@ -79,8 +79,22 @@ export const drawPairPane = (ui: PaneElements, m: PaneModel, act: PaneActions): 
 
       <Box gap={1}>
         {isHost && act.copy && <Button key={`${keys}-copy`} label="Copy invite" onPress={act.copy} />}
-        {act.stop && <Button key={`${keys}-stop`} label={isHost ? 'Stop pairing' : 'Stop watching'} onPress={act.stop} />}
+        {act.stop && <Button key={`${keys}-stop`} label={isHost ? 'Stop sharing' : 'Stop watching'} onPress={act.stop} />}
       </Box>
+    </Box>
+  )
+}
+
+export const drawPreview = (ui: PaneElements, isPaired: boolean, host: PaneModel, guest: PaneModel, act: PaneActions): RenderElement => {
+  const { Box, Text } = ui
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Text dimColor wrap="wrap">
+        {isPaired ? 'Preview: your pane, and your guest’s as it is now. Nothing here is sent.' : 'Preview: your pane once someone joins, and theirs. Nothing here is sent.'}
+      </Text>
+      {drawPairPane(ui, host, {})}
+      <Text dimColor>{'─── your guest’s pane ───'}</Text>
+      {drawPairPane(ui, guest, act)}
     </Box>
   )
 }

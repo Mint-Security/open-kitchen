@@ -5,7 +5,7 @@
 
 import type { RenderElement } from 'claude-code'
 
-import type { PairEntry, PairToolView } from '../../types'
+import type { PairEntry, PairToolView } from '../../../types'
 import { drawEntry, drawTool } from './terminal'
 import type { ToolEntry } from './terminal'
 import type { Elements, TranscriptOptions } from './transcript'

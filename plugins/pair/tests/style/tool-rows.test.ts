@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { relativeTo, toolViewOf } from '../../hooks/style/tool-rows'
+import { relativeTo, toolViewOf } from '../../hooks/display/style/tool-rows'
 
 test('tool calls become what the transcript draws for them', () => {
   const bash = toolViewOf('Bash', { command: 'npm test\n--watch=false' }, { stdout: 'PASS a\nPASS b', stderr: 'warn', interrupted: false }, '', false, '/repo')

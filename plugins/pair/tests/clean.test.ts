@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { cleanName, cleanText, cleanToolName } from '../hooks/clean'
+import { cleanName, cleanText, cleanToolName } from '../hooks/wire/clean'
 
 test('untrusted text is stripped of anything that could hide or reorder it', () => {
   expect(cleanText('run‮ rm -rf‬ now​!', 100)).toBe('run rm -rf now!')

@@ -14,7 +14,7 @@ claude plugin validate plugins/pair
 claude plugin test plugins/pair
 ```
 
-All of them must pass; CI runs them on every push and pull request. The lint forbids non-null assertions (`x!`) in each plugin's `hooks/`: handle the missing value instead. Tests may use them. Add a test for any behaviour you change: `plugins/dividend/tests/dividend.test.tsx` and `plugins/pair/tests/pair.test.tsx` drive each whole plugin through Claude Code's test kit, and the other test files cover the pure modules.
+All of them must pass; CI runs them on every push and pull request. The lint forbids non-null assertions (`x!`) in each plugin's `hooks/`: handle the missing value instead. Tests may use them. Add a test for any behaviour you change: `plugins/dividend/tests/dividend.test.tsx` and `plugins/pair/tests/pair.test.tsx` drive each whole plugin through Claude Code's test kit, and the other test files cover the pure modules. A change to how Pair's two sides talk also runs `node scripts/e2e-pair.mjs --spend`, which the test kit cannot stand in for.
 
 ## Dividend's ground rules
 
@@ -37,13 +37,21 @@ The rest are pure functions that take values and return values, in two folders:
 
 ## Pair's ground rules
 
-- Pair sends nothing anywhere and runs no program: no network calls, no telemetry, no model calls of its own.
-- Nothing runs until `/pair preview`.
-- What would leave the host is what its transcript shows, and nothing more (`hooks/mirror.ts`).
-- Everything from the other side is untrusted: it is cleaned before it is shown (`hooks/clean.ts`).
+- Pair talks to the network in three ways only: it downloads the pinned Syncthing release from GitHub with `curl`, checked against pinned checksums; the guest looks the host up on Syncthing's discovery servers itself; and its own Syncthing reaches the other side, directly or through Syncthing's community relays. No server of ours, no telemetry, no model calls of its own.
+- Nothing runs until `/pair`, and nothing after `/pair stop` or the session's end.
+- What leaves the host is what its transcript shows, and nothing more (`hooks/session/mirror.ts`).
+- Everything from the other side is untrusted: it is validated (`hooks/wire/protocol.ts`) and cleaned (`hooks/wire/clean.ts`) before it is shown, never decides what program runs, and reaches Claude only as the guest's message, at most 8 a minute.
+- A change to what travels between the two sides keeps the payload validators in step, and a change to the folders keeps each side writing only its own.
 
 ## How Pair is laid out
 
-`plugins/pair/hooks/register.tsx` is the hooks module: the commands and the preview. The rest are pure: what the host shares (`mirror.ts`), the cleaning of what the other side sends (`clean.ts`), the whole pane (`pane.tsx`), and, in `hooks/style/`, everything that copies how Claude Code draws a conversation: a tool row (`tool-rows.ts`), and the transcript in a terminal's style or the desktop app's (`transcript.tsx`, `terminal.tsx`, `desktop.tsx`). Nothing in `style/` decides what is shared or sent; it only makes what it is given look the way Claude Code draws it.
+`plugins/pair/hooks/register.tsx` is the hooks module: hosting and joining, the one-second loop that moves sealed messages through the shared folders, the commands, and the hooks that draw the band and the panes. Every function that uses `$` stays in this one file, because Claude Code follows `$` only into functions of the hooks module, never across an import; what a button does reaches the views as a closure. `hooks/schema.ts` checks the shape of what arrives from outside, and each check carries the type it proves.
+
+The rest never touch `$`, in four folders:
+
+- `hooks/wire/`: what travels between the two sides: the invite, keys, sealing and payloads (`protocol.ts`), the pinned release, config, folders and Syncthing's answers (`syncthing.ts`), batches and per-minute limits (`limits.ts`), and the cleaning of what the other side sends (`clean.ts`).
+- `hooks/session/`: what the host shares of its session (`mirror.ts`), and the pairing's log and its lines (`log.ts`).
+- `hooks/pairing/`: a pairing's record, paths and invite (`room.ts`), what `/pair`'s words mean (`command.ts`), and what the status line, `/pair` and the pane say of where it stands, with the state each side tells the other (`status.ts`).
+- `hooks/display/`: the pane and the preview (`pane.tsx`), the band (`band.tsx`), and in `style/` everything that copies how Claude Code draws a conversation: a tool row (`tool-rows.ts`), and the transcript in a terminal's style or the desktop app's (`transcript.tsx`, `terminal.tsx`, `desktop.tsx`). Nothing in `style/` decides what is shared or sent; it only makes what it is given look the way Claude Code draws it.
 
 By contributing, you agree that your contribution is licensed under the [Apache-2.0](LICENSE) license.

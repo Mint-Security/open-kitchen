@@ -1,4 +1,4 @@
-import type { PairToolView } from '../types'
+import type { PairToolView } from '../../types'
 
 // Everything that arrives from the other side is untrusted text: it is shown to a person (and, for a
 // guest's proposal, forwarded to a model), so strip whatever a screen draws as nothing or reorders:
