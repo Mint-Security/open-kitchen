@@ -14,11 +14,12 @@ We work with AI agents all day and keep building things to make that better. We'
 ```bash
 claude plugin marketplace add Mint-Security/open-kitchen
 claude plugin install dividend@mint-security
+claude plugin install pair@mint-security
 ```
 
-Then start a session (or run `/reload-plugins`) and type `/dividend`. Needs Claude Code 2.1.291 or newer. In the desktop app, add `Mint-Security/open-kitchen` under Settings, Plugins, Add. To pin a release, see [SECURITY.md](SECURITY.md#updates).
+Then start a session (or run `/reload-plugins`) and type `/dividend`, or `/pair` to share the session. Needs Claude Code 2.1.291 or newer; Pair also needs macOS or Linux. In the desktop app, add `Mint-Security/open-kitchen` under Settings, Plugins, Add. To pin a release, see [SECURITY.md](SECURITY.md#updates).
 
-Pair installs the same way, with `claude plugin install pair@mint-security`, and needs macOS or Linux. Read its [security model](plugins/pair/README.md#security-model-poc) before you hand anyone an invite.
+Pair is a proof of concept: read its [security model](plugins/pair/README.md#security-model-poc) before you hand anyone an invite.
 
 These plugins run inside Claude Code with your permissions, so each one's README says exactly what it does on your machine.
 
