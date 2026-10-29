@@ -1,5 +1,11 @@
 # Changelog
 
+## pair 0.1.2
+
+- In the desktop app, a guest's message box now empties once the message is sent, as it already did in the terminal; a message that isn't sent, such as one that's too long, stays in the box to fix.
+- The first pairing on a machine says up front that it can take a minute or so while pair downloads Syncthing, and the status line and the Pair pane say so until the download is done.
+- The host's messages in the guest's pane, and the status colors in the pane and the band, follow the theme instead of fixed colors, so they read in light mode too.
+
 ## pair 0.1.1
 
 - A listing icon: two sprouts in one pot.

@@ -3,6 +3,8 @@ import type { StatePayload } from '../wire/protocol'
 
 const WORKING_MAX_MS = 15 * 60_000
 
+const DOWNLOADING = 'Downloading Syncthing (one time, about 11 MB); this can take a minute…'
+
 export const SEAT_HINT =
   "Can't get into the host's session, though it is up: someone else may already have joined with this invite, or the host runs another version of pair."
 
@@ -17,6 +19,7 @@ export function statusLine(room: PairRoom | null, peer: PairPeer | null, link: P
   if (!room) return undefined
   if (link === 'failed') return 'Pair · stopped · see /pair'
   if (link === 'full') return 'Pair · room is full'
+  if (link === 'downloading') return 'Pair · downloading Syncthing…'
   if (link === 'starting') return 'Pair · starting…'
   if (room.role === 'host') return `Pair · ${sharingLine(peer, link)}`
   if (!peer) return 'Pair · connecting…'
@@ -36,6 +39,7 @@ export function describePairing(room: PairRoom, peer: PairPeer | null, link: Pai
     if (isHost) lines.push(`Hosting ${peer.name}: ${state}`)
     else lines.push(`Watching ${peer.name}: ${state}${peer.isWorking ? ` · Claude is working${peer.tool ? ` (${peer.tool})` : ''}` : ''}`)
   }
+  if (link === 'downloading') lines.push(DOWNLOADING)
   if (link === 'starting') lines.push('Starting Syncthing…')
   if (link === 'offline' && problem !== SEAT_HINT && !peer?.hasLeft) lines.push('The connection is down; retrying.')
   if (link === 'full') lines.push('This pairing already has two people.')
@@ -44,6 +48,7 @@ export function describePairing(room: PairRoom, peer: PairPeer | null, link: Pai
 }
 
 export const noticesOf = (isHost: boolean, peer: PairPeer | null, link: PairLink, problem: string | null): { text: string; isError: boolean }[] => [
+  ...(link === 'downloading' ? [{ text: DOWNLOADING, isError: false }] : []),
   ...(link === 'starting' ? [{ text: 'Starting Syncthing…', isError: false }] : []),
   ...(link === 'offline' && problem !== SEAT_HINT && !peer?.hasLeft ? [{ text: 'Connection lost, retrying…', isError: true }] : []),
   ...(link === 'full' ? [{ text: 'This pairing already has two people.', isError: true }] : []),

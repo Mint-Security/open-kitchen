@@ -64,7 +64,8 @@ const makeWorld = (on: On, clock: MockClock) => {
     lookups: 0,
     uname: 'Darwin arm64\n',
     osUser: { stdout: 'tester\n', exitCode: 0 },
-    // Milliseconds `syncthing generate` takes, and whether Syncthing exits the moment it starts.
+    // Milliseconds the download and `syncthing generate` take, and whether Syncthing exits the moment it starts.
+    slowDownload: 0,
     slowGenerate: 0,
     exitsAtOnce: false,
     checksum: RELEASE.sha256,
@@ -235,9 +236,13 @@ const makeWorld = (on: On, clock: MockClock) => {
         return { value: { ...ok().value, exitCode: w.osUser.exitCode, stdout: w.osUser.stdout } }
       case 'uname':
         return ok(w.uname)
-      case 'curl':
-        write(after('-o'), 'an archive')
-        return ok()
+      case 'curl': {
+        const fetched = () => {
+          write(after('-o'), 'an archive')
+          return ok()
+        }
+        return w.slowDownload > 0 ? clock.sleep(w.slowDownload).then(fetched) : fetched()
+      }
       case 'shasum':
       case 'sha256sum': {
         const text = w.files.get(argv.at(-1) ?? '')?.text
@@ -498,6 +503,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     const band = await mountBand($, surface)
     expect(await band.find({ text: /waiting for your guest/ })).toBeDefined()
+    expect((await band.find({ text: /^Pair$/ }))?.props.color).toBe('success')
     expect(await band.find({ text: w.copied[0]! })).toBeUndefined()
     expect(await band.find({ text: /[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}/ })).toBeUndefined()
     await band.press({ key: 'pair-band-copy' })
@@ -517,7 +523,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     const pane = await mountPane($, surface)
     expect(await pane.find({ text: /hosting Dana/ })).toBeDefined()
-    expect(await pane.find({ text: 'online' })).toBeDefined()
+    expect((await pane.find({ text: /^online$/ }))?.props.color).toBe('success')
     expect(await pane.find({ text: /the whole session, tool output included/ })).toBeDefined()
     expect(await pane.find({ text: /straight to Claude/ })).toBeDefined()
 
@@ -563,6 +569,29 @@ test('host: Syncthing runs from a verified download, as one process, with an ide
 
   await seconds(clock, 6)
   expect(w.files.get(room.replace('/key.pem', '/syncthing.log'))?.text).toContain('syncthing')
+})
+
+test('host: the first pairing on a machine says Syncthing downloads first, and shows it while it does', async ($, on) => {
+  const { clock, w } = await setup($, on, 'terminal', world => {
+    world.slowDownload = 5000
+    world.slowGenerate = 3000
+  })
+  const first = await run($, '')
+  expect(first.text).toContain('once Syncthing is up, in a minute or so, as pair first downloads Syncthing (one time, about 11 MB): send it')
+  await within(clock, 3, () => w.statuses.at(-1) === 'Pair · downloading Syncthing…')
+  expect(w.statuses.at(-1)).toBe('Pair · downloading Syncthing…')
+  const pane = await mountPane($)
+  expect(await pane.find({ text: 'Downloading Syncthing (one time, about 11 MB); this can take a minute…' })).toBeDefined()
+  expect((await run($, 'invite')).text).toBe('Your invite is ready once Syncthing is up, in a minute or so, as pair first downloads Syncthing (one time, about 11 MB).')
+
+  await within(clock, 8, () => w.statuses.at(-1) === 'Pair · starting…')
+  expect(w.statuses.at(-1)).toBe('Pair · starting…')
+  await inviteOf(w, clock)
+  await pane.redraw()
+  expect(await pane.find({ text: /Downloading Syncthing/ })).toBeUndefined()
+  await run($, 'stop')
+  expect((await run($, '')).text).toContain('once Syncthing is up, in a few seconds: send it')
+  expect(w.ran.filter(argv => argv[0] === 'curl').length).toBe(1)
 })
 
 test("host: both sides pull the other side's files in name order, the order they were written in", async ($, on) => {
@@ -955,6 +984,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     const joined = await run($, formatInvite(invite))
     expect(joined.text).toContain('Connecting')
+    expect(joined.text).toContain('once you are connected, in a minute or so, as pair first downloads Syncthing (one time, about 11 MB);')
     expect(w.opened).toContain('pair')
     await within(clock, 12, () => w.statuses.at(-1) === 'Pair · watching Sam')
     expect(w.statuses).toContain('Pair · connecting…')
@@ -962,6 +992,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await pane.find({ text: /watching Sam/ })).toBeDefined()
     expect(await pane.find({ text: /What you send goes straight to Sam's Claude/ })).toBeDefined()
     expect(await pane.find({ text: /refactor the parser/ })).toBeDefined()
+    expect(JSON.stringify(await pane.drawn())).toContain('"backgroundColor":"userMessageBackground"')
     expect(await pane.find({ text: /Plan: read \*\*parser.ts\*\* first/ })).toBeDefined()
     if (surface === 'desktop') {
       expect(await pane.find({ text: 'Read a file, searched code, ran a command ›' })).toBeDefined()
@@ -981,7 +1012,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await seconds(clock, 2)
     expect(w.statuses.at(-1)).toBe('Pair · watching Sam · Claude working')
     await pane.redraw()
-    expect(await pane.find({ text: /Claude is working · Edit/ })).toBeDefined()
+    expect((await pane.find({ text: /^ · Claude is working · Edit$/ }))?.props.color).toBe('warning')
 
     await sam.send({
       kind: 'events',
@@ -1013,6 +1044,13 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect((await sam.view()).raw.some(data => data.includes('empty case'))).toBe(false)
     await pane.redraw()
     expect(await pane.find({ text: /^Tester: also handle the empty case$/ })).toBeDefined()
+    const field = surface === 'desktop' ? 'pair-input-1' : 'pair-input'
+    expect(await pane.find({ key: field })).toBeDefined()
+    if (surface === 'desktop') expect(await pane.find({ key: 'pair-input' })).toBeUndefined()
+    await pane.input({ key: field, text: 'x'.repeat(601) })
+    expect(w.toasts.at(-1)).toBe('Pair · Too long: keep it under 600 characters.')
+    await pane.redraw()
+    expect(await pane.find({ key: field })).toBeDefined()
 
     await sam.send({ kind: 'decision', ref: proposal?.mid, outcome: 'sent' })
     await sam.send({ kind: 'events', events: [ev('user', 'also handle the empty case', { who: 'Guest', ref: proposal?.mid })] })
@@ -1294,7 +1332,10 @@ test('errors: a machine pair cannot run on, and a download that fails its checks
   expect((await run($, 'invite')).text).toContain('This pairing has stopped: pair runs on macOS and Linux for now')
   const band = await mountBand($)
   expect(await band.find({ text: /stopped: pair runs on macOS and Linux/ })).toBeDefined()
+  expect((await band.find({ text: /^Pair$/ }))?.props.color).toBe('error')
   expect(await band.find({ key: 'pair-band-copy' })).toBeUndefined()
+  const pane = await mountPane($)
+  expect((await pane.find({ text: /^pair runs on macOS and Linux for now/ }))?.props.color).toBe('error')
   expect((await run($, 'stop')).text).toBe('Pairing stopped.')
 
   w.uname = 'Darwin arm64\n'
@@ -1558,6 +1599,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await pane.find({ key: 'preview-input' })).toBeUndefined()
     await pane.input({ key: 'preview-guest-input', text: 'hello' })
     expect(w.toasts.at(-1)).toContain('goes straight to your Claude')
+    await pane.redraw()
+    expect(await pane.find({ key: surface === 'desktop' ? 'preview-guest-input-1' : 'preview-guest-input' })).toBeDefined()
     expect([w.ran.length, w.fetches, w.spawns.length, w.statuses.length]).toEqual([0, 0, 0, 0])
 
     const started = (await run($, '')).text

@@ -72,7 +72,7 @@ export type PairRoom = {
 
 export type PairPeer = PairPeerView & { pid: string }
 
-export type PairLink = 'starting' | 'connecting' | 'ok' | 'offline' | 'full' | 'failed'
+export type PairLink = 'downloading' | 'starting' | 'connecting' | 'ok' | 'offline' | 'full' | 'failed'
 
 declare module 'claude-code' {
   interface PluginState {
@@ -88,6 +88,7 @@ declare module 'claude-code' {
       received: [number, number][]
       link: PairLink
       problem: string | null
+      sentFromPane: number
     }
   }
 }
