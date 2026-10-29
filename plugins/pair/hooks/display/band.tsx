@@ -1,5 +1,7 @@
 import type { ElementTable, RenderElement, UiPressArgument } from 'claude-code'
 
+import { COLORS } from './style/colors'
+
 export type BandElements = Pick<ElementTable, 'Box' | 'Text' | 'Button'>
 
 export type BandActions = {
@@ -16,7 +18,7 @@ export const drawPairBand = (ui: BandElements, band: PairBand, act: BandActions)
     return (
       <Box flexDirection="column">
         <Text wrap="wrap">
-          <Text color="red" bold>
+          <Text color={COLORS.problem} bold>
             Pair
           </Text>
           <Text dimColor>{` · stopped: ${band.problem ?? 'see /pair'}`}</Text>
@@ -31,7 +33,7 @@ export const drawPairBand = (ui: BandElements, band: PairBand, act: BandActions)
   return (
     <Box flexDirection="column">
       <Text>
-        <Text color="green" bold>
+        <Text color={COLORS.ok} bold>
           Pair
         </Text>
         <Text dimColor>{` · ${band.line}`}</Text>

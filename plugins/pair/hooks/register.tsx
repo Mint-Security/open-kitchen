@@ -108,6 +108,7 @@ const previewTickAtom = atom({ plugin: 'pair', key: 'previewTick' } as const, 0)
 const expandedAtom = atom({ plugin: 'pair', key: 'expanded' } as const, [])
 const linkAtom = atom({ plugin: 'pair', key: 'link' } as const, 'starting')
 const problemAtom = atom({ plugin: 'pair', key: 'problem' } as const, null)
+const sentFromPaneAtom = atom({ plugin: 'pair', key: 'sentFromPane' } as const, 0)
 
 type PollBody = {
   now: number
@@ -278,16 +279,19 @@ async function sha256Of($: EngineInterface, file: string): Promise<string> {
   return ''
 }
 
+const syncthingBin = () => `${dataDir}/bin/${SYNCTHING_VERSION}/syncthing`
+
 // One copy per machine, fetched on first use from Syncthing's GitHub release. The archive is checked
 // against its published checksum, and the binary against the one pinned in syncthing.ts, before it
 // first runs and again before every start: a copy that changed on disk is fetched afresh.
 async function ensureBinary($: EngineInterface, release: Release): Promise<string> {
-  const bin = `${dataDir}/bin/${SYNCTHING_VERSION}/syncthing`
+  const bin = syncthingBin()
   if (await $.fs.exists(bin)) {
     if ((await sha256Of($, bin)) === release.binarySha256) return bin
     await run($, ['rm', '-f', bin])
   }
   $.ui.toast('Pair · downloading Syncthing (one time, about 11 MB)')
+  await setLink($, 'downloading')
   const tmp = `${dataDir}/bin/.download-${randomId(8)}`
   try {
     await run($, ['mkdir', '-p', tmp, `${dataDir}/bin/${SYNCTHING_VERSION}`])
@@ -304,6 +308,7 @@ async function ensureBinary($: EngineInterface, release: Release): Promise<strin
     await run($, ['mv', '-f', `${tmp}/${release.dir}/syncthing`, bin])
   } finally {
     await $.process.run(['rm', '-rf', tmp]).catch(() => undefined)
+    if ((await read($, linkAtom)) === 'downloading') await setLink($, 'starting')
   }
   return bin
 }
@@ -1087,13 +1092,13 @@ async function tick($: EngineInterface) {
   }
 }
 
-const INVITE_NOT_YET = 'Your invite is ready once Syncthing is up, usually in a few seconds.'
+const DOWNLOAD_WAIT = 'in a minute or so, as pair first downloads Syncthing (one time, about 11 MB)'
 
 // Why there is no invite, or no sending: still starting, or stopped for good.
 async function notUpYet($: EngineInterface): Promise<string> {
-  return (await read($, linkAtom)) === 'failed'
-    ? `This pairing has stopped: ${(await read($, problemAtom)) ?? 'see /pair'}. /pair stop clears it.`
-    : INVITE_NOT_YET
+  const link = await read($, linkAtom)
+  if (link === 'failed') return `This pairing has stopped: ${(await read($, problemAtom)) ?? 'see /pair'}. /pair stop clears it.`
+  return `Your invite is ready once Syncthing is up, ${link === 'downloading' ? DOWNLOAD_WAIT : 'usually in a few seconds'}.`
 }
 
 async function copyInvite($: EngineInterface, room: PairRoom, surface?: RenderSurface) {
@@ -1188,6 +1193,7 @@ async function startPairing($: EngineInterface): Promise<string> {
   } catch (error) {
     return errorText(error)
   }
+  const soon = (await $.fs.exists(syncthingBin())) ? 'in a few seconds' : DOWNLOAD_WAIT
   const code = generateCode()
   const keys = await keysFor(code)
   const room: PairRoom = {
@@ -1212,7 +1218,7 @@ async function startPairing($: EngineInterface): Promise<string> {
   ensureTimer($)
   await $.ui.open({ id: PANE, title: 'Pair' })
   await refreshStatus($)
-  return `Pairing started. Your invite goes to your clipboard once Syncthing is up, in a few seconds: send it to your guest and they run it in their Claude Code (/pair invite shows it). They will see the whole session, tool output included, and what they send goes straight to Claude with your permissions, at most ${FORWARDS_PER_MINUTE} messages a minute.`
+  return `Pairing started. Your invite goes to your clipboard once Syncthing is up, ${soon}: send it to your guest and they run it in their Claude Code (/pair invite shows it). They will see the whole session, tool output included, and what they send goes straight to Claude with your permissions, at most ${FORWARDS_PER_MINUTE} messages a minute.`
 }
 
 async function redrawPreview($: EngineInterface) {
@@ -1315,6 +1321,7 @@ async function joinPairing($: EngineInterface, invite: Invite): Promise<string> 
   } catch (error) {
     return errorText(error)
   }
+  const soon = (await $.fs.exists(syncthingBin())) ? 'usually within a few seconds' : DOWNLOAD_WAIT
   const keys = await keysFor(invite.code)
   const room: PairRoom = {
     v: ROOM_FORMAT,
@@ -1337,7 +1344,7 @@ async function joinPairing($: EngineInterface, invite: Invite): Promise<string> 
   ensureTimer($)
   await $.ui.open({ id: PANE, title: 'Pair' })
   await refreshStatus($)
-  return 'Connecting. The Pair pane shows the session once you are connected, usually within a few seconds; ask Claude something there or with /pair <message>.'
+  return `Connecting. The Pair pane shows the session once you are connected, ${soon}; ask Claude something there or with /pair <message>.`
 }
 
 async function stopPairing($: EngineInterface): Promise<string> {
@@ -1347,19 +1354,33 @@ async function stopPairing($: EngineInterface): Promise<string> {
   return 'Pairing stopped.'
 }
 
-async function sendProposal($: EngineInterface, raw: string): Promise<string> {
+type SendResult = { reply: string; isSent: boolean }
+
+const refusal = (reply: string): SendResult => ({ reply, isSent: false })
+
+async function sendProposal($: EngineInterface, raw: string): Promise<SendResult> {
   const room = await readRoom($)
-  if (!room || room.role !== 'guest') return 'Only the guest can ask the host’s Claude.'
-  if ((await read($, linkAtom)) === 'failed') return `Not sent. ${await notUpYet($)}`
+  if (!room || room.role !== 'guest') return refusal('Only the guest can ask the host’s Claude.')
+  if ((await read($, linkAtom)) === 'failed') return refusal(`Not sent. ${await notUpYet($)}`)
   const text = cleanText(raw, PROPOSAL_CAP + 1)
-  if (!text) return 'Nothing to send.'
-  if (text.length > PROPOSAL_CAP) return `Too long: keep it under ${PROPOSAL_CAP} characters.`
+  if (!text) return refusal('Nothing to send.')
+  if (text.length > PROPOSAL_CAP) return refusal(`Too long: keep it under ${PROPOSAL_CAP} characters.`)
   const body = { ...envelope(), kind: 'proposal' as const, text }
-  if (!(await post($, room, body))) return "Couldn't save it; not sent."
+  if (!(await post($, room, body))) return refusal("Couldn't save it; not sent.")
   await pushEntries($, [{ id: body.mid, kind: 'proposal', from: 'me', author: 'you', text }])
   const peer = await read($, peerAtom)
-  if (!peer) return 'Saved; it goes to the host once you are connected.'
-  return `Sent. ${peer.name}'s Claude gets it right away.`
+  return { reply: peer ? `Sent. ${peer.name}'s Claude gets it right away.` : 'Saved; it goes to the host once you are connected.', isSent: true }
+}
+
+async function sendFromPane($: EngineInterface, raw: string) {
+  const sent = await sendProposal($, raw)
+  if (sent.isSent) await update($, sentFromPaneAtom, n => n + 1)
+  $.ui.toast(`Pair · ${sent.reply}`)
+}
+
+async function sendFromPreview($: EngineInterface) {
+  await update($, sentFromPaneAtom, n => n + 1)
+  $.ui.toast('Pair preview · what your guest types here goes straight to your Claude.')
 }
 
 async function recentLog($: EngineInterface, count: number): Promise<string> {
@@ -1391,7 +1412,7 @@ async function handleCommand($: EngineInterface, args: string): Promise<string> 
     case 'join':
       return room ? 'Already paired. Run /pair stop first.' : joinPairing($, command.invite)
     case 'send':
-      return sendProposal($, command.text)
+      return (await sendProposal($, command.text)).reply
     case 'hint':
       return room ? 'Your guest sees what you type to Claude; /pair takes invite, preview, log or stop.' : 'Not paired. Run /pair to host a session, or /pair <invite> to join one.'
   }
@@ -1560,6 +1581,7 @@ export const register: Register = (on, options) => {
     const link = await read($, linkAtom)
     const problem = await read($, problemAtom)
     const expanded = await read($, expandedAtom)
+    const sentFromPane = await read($, sentFromPaneAtom)
     const ui = $.ui.resolve(e)
     const { Box, Button, Code, Markdown, Text } = ui
 
@@ -1582,11 +1604,12 @@ export const register: Register = (on, options) => {
         expanded: new Set(expanded),
         onToggle: id => detach(toggleExpanded($, id))
       },
+      inputRound: e.surface === 'terminal' ? 0 : sentFromPane,
       keys: 'pair'
     }
 
     return drawPairPane({ Box, Text, Markdown, Code, Button, Input: 'Input' in ui ? ui.Input : undefined }, model, {
-      submit: isHost ? undefined : value => detach(sendProposal($, value).then(message => $.ui.toast(`Pair · ${message}`))),
+      submit: isHost ? undefined : value => detach(sendFromPane($, value)),
       copy: press => detach(copyInvite($, room, press.surface)),
       stop: () => detach(stopPairing($))
     })
@@ -1598,6 +1621,7 @@ export const register: Register = (on, options) => {
     const peer = await read($, peerAtom)
     const log = await read($, logAtom)
     const expanded = await read($, expandedAtom)
+    const sentFromPane = await read($, sentFromPaneAtom)
     const ui = $.ui.resolve(e)
     const { Box, Button, Code, Markdown, Text } = ui
 
@@ -1619,7 +1643,6 @@ export const register: Register = (on, options) => {
     const shown = all.slice(-previewRows)
     const guest: PairPeerView = peer ?? { name: 'your guest', isOnline: true, hasLeft: false, isWorking: false, tool: null }
     const host: PairPeerView = { name: hostLabel(), isOnline: true, hasLeft: false, isWorking: isMainTurnOpen, tool: isMainTurnOpen ? lastTool : null }
-    const say = (text: string) => () => $.ui.toast(`Pair preview · ${text}`)
 
     return drawPreview(
       elements,
@@ -1631,6 +1654,7 @@ export const register: Register = (on, options) => {
         entries: room ? log : [],
         earlier: 0,
         transcript: { ...transcript, me: myName || 'you' },
+        inputRound: 0,
         keys: 'preview'
       },
       {
@@ -1644,11 +1668,12 @@ export const register: Register = (on, options) => {
         entries: shown,
         earlier: all.length - shown.length,
         transcript,
+        inputRound: e.surface === 'terminal' ? 0 : sentFromPane,
         keys: 'preview-guest'
       },
       {
         more: () => detach(showMorePreview($)),
-        submit: say('what your guest types here goes straight to your Claude.')
+        submit: () => detach(sendFromPreview($))
       }
     )
   })

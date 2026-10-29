@@ -4,14 +4,13 @@
 import type { RenderElement } from 'claude-code'
 
 import type { PairEntry, PairSpan, PairToolView } from '../../../types'
+import { COLORS } from './colors'
 import type { Elements, TranscriptOptions } from './transcript'
 
 // As the transcript does: tool output wrapped ten columns short of the width, three lines of it shown
 // (four when that is all there is).
 const FOLD_LINES = 3
 const WRAP_MARGIN = 10
-// The transcript's user-message band; no theme key carries it, so this is the dark theme's.
-const PROMPT_BAND = '#373737'
 const HUNG = '  ⎿  '
 
 export const moreLines = (n: number): string => `… +${n} ${n === 1 ? 'line' : 'lines'}`
@@ -99,7 +98,7 @@ const drawResult = (ui: Elements, entry: ToolEntry, columns: number): RenderElem
   if (entry.isError || view.output.length > 0) {
     const { shown, hidden } = foldOutput(view.output, view.totalLines, columns)
     return hung(ui, `${entry.id}:out`, [
-      <Text key="o" wrap="wrap" color={entry.isError ? 'error' : undefined} dimColor={!entry.isError}>
+      <Text key="o" wrap="wrap" color={entry.isError ? COLORS.problem : undefined} dimColor={!entry.isError}>
         {shown.join('\n')}
       </Text>,
       ...(hidden > 0 ? [<Text key="m" dimColor>{moreLines(hidden)}</Text>] : [])
@@ -133,7 +132,7 @@ export const drawTool = (ui: Elements, entry: ToolEntry, options: TranscriptOpti
   return (
     <Box key={entry.id} flexDirection="column">
       <Box flexDirection="row">
-        <Text color={entry.isError ? 'error' : 'success'}>{`${options.bullet} `}</Text>
+        <Text color={entry.isError ? COLORS.problem : COLORS.ok}>{`${options.bullet} `}</Text>
         <Box flexGrow={1}>
           <Text bold wrap="wrap">
             {view.args ? `${view.label}(${view.args})` : view.label}
@@ -151,13 +150,13 @@ const PROMPT_MARKDOWN_MAX = 4000
 const drawPrompt = (ui: Elements, key: string, text: string) => {
   const { Box, Markdown, Text } = ui
   return (
-    <Box key={key} flexDirection="row" backgroundColor={PROMPT_BAND} paddingRight={1}>
-      <Text color="inactive">❯ </Text>
+    <Box key={key} flexDirection="row" backgroundColor={COLORS.userMessage} paddingRight={1}>
+      <Text color={COLORS.promptMark}>❯ </Text>
       <Box flexDirection="column" flexGrow={1}>
         {text.length <= PROMPT_MARKDOWN_MAX ? (
           <Markdown text={text} />
         ) : (
-          <Text color="text" wrap="wrap">
+          <Text color={COLORS.text} wrap="wrap">
             {text}
           </Text>
         )}
@@ -186,7 +185,7 @@ export const drawEntry = (ui: Elements, entry: PairEntry, options: TranscriptOpt
       return drawTool(ui, entry, options)
     case 'decision':
       return (
-        <Text key={entry.id} dimColor={!entry.isError} color={entry.isError ? 'error' : undefined}>
+        <Text key={entry.id} dimColor={!entry.isError} color={entry.isError ? COLORS.problem : undefined}>
           {`${HUNG}${entry.text}`}
         </Text>
       )

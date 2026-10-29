@@ -6,6 +6,7 @@
 import type { RenderElement } from 'claude-code'
 
 import type { PairEntry, PairToolView } from '../../../types'
+import { COLORS } from './colors'
 import { drawEntry, drawTool } from './terminal'
 import type { ToolEntry } from './terminal'
 import type { Elements, TranscriptOptions } from './transcript'
@@ -116,15 +117,11 @@ export const desktopRowsOf = (entries: readonly PairEntry[]): DesktopRow[] => {
   return rows
 }
 
-// The desktop app's own prompt bubble, as its dark theme draws it; a round border in the fill's color rounds
-// its corners.
-const BUBBLE = '#252525'
-
 const drawBubble = (ui: Elements, key: string, text: string) => {
   const { Box, Markdown } = ui
   return (
     <Box key={key} flexDirection="row" justifyContent="flex-end">
-      <Box flexDirection="column" backgroundColor={BUBBLE} borderStyle="round" borderColor={BUBBLE} paddingX={2} paddingY={1}>
+      <Box flexDirection="column" backgroundColor={COLORS.userMessage} borderStyle="round" borderColor={COLORS.userMessage} paddingX={2} paddingY={1}>
         <Markdown text={text} />
       </Box>
     </Box>

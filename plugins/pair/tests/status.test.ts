@@ -26,6 +26,7 @@ test('the status line says where the pairing stands, from either side', () => {
     [null, null, 'ok', undefined],
     [host, null, 'failed', 'Pair · stopped · see /pair'],
     [guest, null, 'full', 'Pair · room is full'],
+    [guest, null, 'downloading', 'Pair · downloading Syncthing…'],
     [host, null, 'starting', 'Pair · starting…'],
     [host, null, 'connecting', 'Pair · sharing · waiting for your guest'],
     [guest, null, 'connecting', 'Pair · connecting…'],
@@ -40,6 +41,7 @@ test('the status line says where the pairing stands, from either side', () => {
 
 test("/pair's answer and the pane's notices say the same state in their own words", () => {
   expect(describePairing(host, null, 'starting', null)).toBe('Hosting. Waiting for your guest to join.\nStarting Syncthing…')
+  expect(describePairing(guest, null, 'downloading', null)).toBe('Connecting to the host…\nDownloading Syncthing (one time, about 11 MB); this can take a minute…')
   expect(describePairing(guest, dana({ isWorking: true, tool: 'Edit' }), 'ok', null)).toBe('Watching Dana: online · Claude is working (Edit)')
   expect(describePairing(host, dana({ isOnline: false }), 'offline', null)).toBe('Hosting Dana: offline\nThe connection is down; retrying.')
   expect(describePairing(host, dana({ hasLeft: true }), 'offline', null)).toBe('Hosting Dana: left')
@@ -50,6 +52,10 @@ test("/pair's answer and the pane's notices say the same state in their own word
   expect(noticesOf(false, null, 'offline', SEAT_HINT)).toEqual([{ text: SEAT_HINT, isError: true }])
   expect(noticesOf(true, null, 'failed', 'Syncthing did not start; retrying.')).toEqual([{ text: 'Syncthing did not start; retrying.', isError: true }])
   expect(noticesOf(false, null, 'starting', null)).toEqual([{ text: 'Starting Syncthing…', isError: false }])
+  expect(noticesOf(true, null, 'downloading', null)).toEqual([
+    { text: 'Downloading Syncthing (one time, about 11 MB); this can take a minute…', isError: false },
+    { text: 'Send your guest the invite: Copy invite, below.', isError: false }
+  ])
 })
 
 test('what the host says of itself: working while a turn runs, for at most a quarter of an hour; a guest never is', () => {
