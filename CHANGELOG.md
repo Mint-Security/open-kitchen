@@ -1,5 +1,12 @@
 # Changelog
 
+## pair 0.1.3
+
+- The guest's pane shows when the host's Claude is at work, as the host's spinner does: from the moment a turn starts until it ends, a row under the conversation says Claude is thinking, or working while a tool call runs, with how long the turn has taken (`✻ Thinking… (12s)`).
+- The header names a tool only while its call runs; it used to name the last one, long after it was back. A guest on 0.1.2 sees that too.
+- `/pair preview` follows a turn as it happens: it used to change only when the next row came in.
+- A subagent's turns and calls no longer turn the host's working status on or off, or name its tools.
+
 ## pair 0.1.2
 
 - In the desktop app, a guest's message box now empties once the message is sent, as it already did in the terminal; a message that isn't sent, such as one that's too long, stays in the box to fix.

@@ -5,8 +5,8 @@
 import type { ElementTable, RenderElement } from 'claude-code'
 
 import type { PairEntry } from '../../../types'
-import { drawDesktop } from './desktop'
-import { drawTerminal } from './terminal'
+import { drawDesktop, drawDesktopSpinner } from './desktop'
+import { drawTerminal, drawTerminalSpinner } from './terminal'
 
 export type Elements = Pick<ElementTable, 'Box' | 'Text' | 'Markdown' | 'Code'> & { Button?: ElementTable['Button'] }
 
@@ -28,3 +28,9 @@ export const styleOf = (surface: string): TranscriptStyle => (surface === 'termi
 
 export const drawTranscript = (ui: Elements, entries: readonly PairEntry[], options: TranscriptOptions): RenderElement[] =>
   options.style === 'desktop' ? drawDesktop(ui, entries, options) : drawTerminal(ui, entries, options)
+
+// Claude at work under the last row, as its spinner shows it: thinking, or on a tool call, and since when.
+export type Spinner = { isThinking: boolean; since: number | null }
+
+export const drawSpinner = (ui: Elements, spinner: Spinner, now: number, options: TranscriptOptions): RenderElement =>
+  options.style === 'desktop' ? drawDesktopSpinner(ui, spinner, now, options) : drawTerminalSpinner(ui, spinner, now, options)

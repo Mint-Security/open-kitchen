@@ -41,7 +41,10 @@ export type PairPeerView = {
   isOnline: boolean
   hasLeft: boolean
   isWorking: boolean
+  // The tool their Claude is running, while a call runs.
   tool: string | null
+  // When this side first saw their Claude at work on the turn, by its own clock; null while it is not.
+  workingSince: number | null
 }
 
 export type PairRole = 'host' | 'guest'
@@ -77,7 +80,7 @@ export type PairLink = 'downloading' | 'starting' | 'connecting' | 'ok' | 'offli
 declare module 'claude-code' {
   interface PluginState {
     pair: {
-      // Bumped to redraw the preview pane when the session it shows has changed.
+      // Bumped to redraw the preview pane when the session it shows has changed, and each second Claude works.
       previewTick: number
       // The collapsed tool rows a desktop-style transcript shows open, by the id of their first row.
       expanded: string[]
@@ -89,6 +92,8 @@ declare module 'claude-code' {
       link: PairLink
       problem: string | null
       sentFromPane: number
+      // The time a guest's pane counts the host's turn to: moved each second while there is one.
+      clock: number
     }
   }
 }

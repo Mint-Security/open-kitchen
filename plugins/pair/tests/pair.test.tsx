@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { Engine, MockClock } from 'claude-code/testing'
+import type { Engine, MockClock, Plugin } from 'claude-code/testing'
 import type { FsEntry, On, SessionMessage } from 'claude-code'
 
 import {
@@ -79,7 +79,9 @@ const makeWorld = (on: On, clock: MockClock) => {
     closed: [] as string[],
     submitted: [] as string[],
     // What `syncthing device-id` answers for each certificate `syncthing generate` wrote, wherever it was copied.
-    deviceIdsByCert: new Map<string, string>()
+    deviceIdsByCert: new Map<string, string>(),
+    // A command beneath runs until this settles, while it is set.
+    gate: null as Promise<void> | null
   }
   // One counter stamps every write on either side, so a sync can tell which copy is newer.
   let stamp = 0
@@ -166,7 +168,10 @@ const makeWorld = (on: On, clock: MockClock) => {
   })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }) as never)
-  on('tool.call', () => ({ result: { text: 'ok', isError: false } }) as never)
+  on('tool.call', async (_$, e) => {
+    if (e.tool === 'Bash') await w.gate
+    return { result: { text: 'ok', isError: false } } as never
+  })
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
@@ -458,6 +463,30 @@ const mountPreview = ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') =
 const toolsKey = async (pane: { drawn: () => Promise<unknown> }) => JSON.stringify(await pane.drawn()).match(/"key":"([a-z-]+-tools-[^"]+)"/)?.[1] ?? ''
 const mountBand = ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') =>
   $.ui.mount({ plugin: 'pair', surface, component: 'AbovePrompt', props: BAND })
+// What a guest's pane draws under the conversation while Claude works, the preview's by default; undefined
+// while it does not.
+const spinnerOf = async (pane: { find: (query: { key: string }) => Promise<unknown> }, keys = 'preview-guest') => {
+  const row = await pane.find({ key: `${keys}-spinner` })
+  return row === undefined ? undefined : JSON.stringify(row)
+}
+// The seconds a spinner row counts.
+const secondsIn = (row: string | undefined): number => Number(/(\d+)s/.exec(row ?? '')?.[1] ?? Number.NaN)
+// What the spinner says, in each style.
+const SAYS = {
+  terminal: { thinking: '✻ Thinking…', working: '✻ Working…' },
+  desktop: { thinking: '"Thinking"', working: '"Working"' }
+} as const
+const WORKING = /^ · Claude is working$/
+const turn = { answer: '', durationMs: 1000, isAborted: false, reason: 'answer' } as const
+
+// A command beneath that runs until the test lets it finish.
+const hold = (w: World) => {
+  let release = (): void => undefined
+  w.gate = new Promise<void>(resolve => {
+    release = resolve
+  })
+  return () => release()
+}
 
 const setup = async ($: Engine, on: On, surface: 'terminal' | 'desktop' = 'terminal', tweak?: (w: World) => void) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -946,7 +975,8 @@ test('host: what the host types reaches the guest as it is sent, working status 
   await $.tool.call({ tool: 'Edit', tool_use_id: 'tu1', file_path: '/tmp/a.ts', old_string: 'a', new_string: 'b' } as never)
   await $.turn.complete({ agentId: 'sub1', answer: 'found it', turnId: 'sub-t1', durationMs: 900, isAborted: false, reason: 'answer' } as never)
   await seconds(clock, 2)
-  expect((await dana.view()).state).toMatchObject({ isWorking: true, tool: 'Edit' })
+  // The Edit is back: Claude is thinking again, with no tool running.
+  expect((await dana.view()).state).toMatchObject({ isWorking: true, tool: null })
   expect(viewOf((await dana.view()).events.at(-1))).toMatchObject({ label: 'Update', args: 'a.ts' })
   await $.turn.complete({ answer: 'done', turnId: 't1', durationMs: 5243, isAborted: false, reason: 'answer' })
   await seconds(clock, 2)
@@ -964,6 +994,62 @@ test('host: what the host types reaches the guest as it is sent, working status 
   expect(w.alive).toBe(0)
   expect(roomFiles(w)).toEqual([])
 })
+
+test("host: the host's state names a tool while its call runs, and none while Claude thinks", async ($, on) => {
+  const { clock, w, dana } = await hostWithGuest($, on)
+  await $.turn.start({ text: 'run the suite', turnId: 't1' } as never)
+  await seconds(clock, 2)
+  expect((await dana.view()).state).toMatchObject({ isWorking: true, tool: null })
+
+  const release = hold(w)
+  const call = $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
+  await seconds(clock, 2)
+  expect((await dana.view()).state).toMatchObject({ isWorking: true, tool: 'Bash' })
+  // A subagent's calls are its own.
+  await $.tool.call({ tool: 'Read', file_path: '/tmp/notes.ts', agentId: 'a1' } as never)
+  await seconds(clock, 2)
+  expect((await dana.view()).state).toMatchObject({ isWorking: true, tool: 'Bash' })
+  release()
+  await call
+  await seconds(clock, 2)
+  expect((await dana.view()).state).toMatchObject({ isWorking: true, tool: null })
+
+  await $.turn.complete({ answer: 'done', turnId: 't1', durationMs: 6000, isAborted: false, reason: 'answer' })
+  await seconds(clock, 2)
+  expect((await dana.view()).state).toMatchObject({ isWorking: false, tool: null })
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`guest: sees the host's Claude at work under the conversation, counting from when the turn reached them (${surface})`, async ($, on) => {
+    const { clock, w } = await setup($, on, surface)
+    const invite = await newInvite()
+    const sam = await peerOf(w, invite, 'host', 'Sam', 'sam00001')
+    await sam.putState()
+    await run($, formatInvite(invite))
+    await within(clock, 12, () => w.statuses.at(-1) === 'Pair · watching Sam')
+    const pane = await mountPane($, surface)
+    expect(await spinnerOf(pane, 'pair')).toBeUndefined()
+
+    await sam.putState({ isWorking: true, tool: null })
+    await seconds(clock, 2)
+    expect(await spinnerOf(pane, 'pair')).toContain(SAYS[surface].thinking)
+    const first = secondsIn(await spinnerOf(pane, 'pair'))
+    await seconds(clock, 3)
+    expect(secondsIn(await spinnerOf(pane, 'pair'))).toBe(first + 3)
+
+    // A call running: the header names it, the row says Claude is working, and the turn's time runs on.
+    await sam.putState({ isWorking: true, tool: 'Bash' })
+    await seconds(clock, 2)
+    expect(await spinnerOf(pane, 'pair')).toContain(SAYS[surface].working)
+    expect(secondsIn(await spinnerOf(pane, 'pair'))).toBe(first + 5)
+    expect((await pane.find({ text: /^ · Claude is working · Bash$/ }))?.props.color).toBe('warning')
+
+    await sam.putState()
+    await seconds(clock, 2)
+    expect(await spinnerOf(pane, 'pair')).toBeUndefined()
+    expect(await pane.find({ text: /Claude is working/ })).toBeUndefined()
+  })
+}
 
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`guest: watches the host's session and asks Claude through the host (${surface})`, async ($, on) => {
@@ -1692,4 +1778,134 @@ test('preview: a desktop surface opens every folded tool row on /pair preview op
   expect((await run($, 'preview close')).text).toBe('The preview folds tool calls again.')
   await pane.redraw()
   expect(await pane.find({ text: /^Bash\(npm test\)$/ })).toBeUndefined()
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`preview: the guest sees Claude thinking or working as it happens, with the turn's time (${surface})`, async ($, on) => {
+    const { clock, w } = await setup($, on, surface)
+    await run($, 'preview')
+    const pane = await mountPreview($, surface)
+    await seconds(clock, 1)
+    expect(await spinnerOf(pane)).toBeUndefined()
+    expect(await pane.find({ text: WORKING })).toBeUndefined()
+
+    await $.prompt.submit({ text: 'fix the timer test', wait: false, origin: composer } as never)
+    await $.turn.start({ text: 'fix the timer test', turnId: 't1' })
+    await clock.settle()
+    expect(await pane.find({ text: WORKING })).toBeDefined()
+    expect(await spinnerOf(pane)).toContain(SAYS[surface].thinking)
+    await seconds(clock, 3)
+    expect(await spinnerOf(pane)).toContain('3s')
+
+    // From the start of a call, not from when it is back: the header names the tool, and the time is the turn's.
+    const release = hold(w)
+    const call = $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
+    await clock.settle()
+    expect(await pane.find({ text: /^ · Claude is working · Bash$/ })).toBeDefined()
+    expect(await spinnerOf(pane)).toContain(SAYS[surface].working)
+    expect(await spinnerOf(pane)).toContain('3s')
+
+    // A subagent's turn and calls are its own: the header stays with the main loop.
+    await $.turn.start({ text: 'look around', turnId: 'a-t1', agentId: 'a1' })
+    await $.tool.call({ tool: 'Read', file_path: '/tmp/notes.ts', agentId: 'a1' } as never)
+    await $.turn.complete({ ...turn, turnId: 'a-t1', agentId: 'a1' })
+    await seconds(clock, 2)
+    expect(await pane.find({ text: /^ · Claude is working · Bash$/ })).toBeDefined()
+    expect(await spinnerOf(pane)).toContain('5s')
+
+    release()
+    await call
+    await clock.settle()
+    expect(await pane.find({ text: WORKING })).toBeDefined()
+    expect(await spinnerOf(pane)).toContain(SAYS[surface].thinking)
+    expect(await pane.find({ text: surface === 'desktop' ? 'Ran a command ›' : /^Bash\(npm test\)$/ })).toBeDefined()
+
+    // Your own half never shows it: you have Claude Code's own spinner.
+    expect(await pane.find({ key: 'preview-spinner' })).toBeUndefined()
+
+    await $.turn.complete({ ...turn, answer: 'Fixed.', turnId: 't1' })
+    await clock.settle()
+    expect(await spinnerOf(pane)).toBeUndefined()
+    expect(await pane.find({ text: WORKING })).toBeUndefined()
+  })
+}
+
+// Another plugin in the session: it counts the timer periods any plugin asks for (`/periods`), and closes a
+// pane by its id (`/close`), as the person's close mark does.
+const bystander: Plugin = {
+  name: 'bystander',
+  register(on) {
+    let periods = 0
+    on('session.start', async ($, e, next) => {
+      await $.command.register({ name: 'periods', description: 'Timer periods asked for so far' })
+      await $.command.register({ name: 'close', description: 'Closes a pane' })
+      return next(e)
+    })
+    on('clock.every', (_$, e, next) => {
+      periods++
+      return next(e)
+    })
+    on('command.run', async ($, e, next) => {
+      if (e.command === 'periods') return { text: String(periods) }
+      if (e.command !== 'close') return next(e)
+      await $.ui.close({ id: e.args })
+      return { text: `Closed ${e.args}.` }
+    })
+  }
+}
+
+test('preview: the clock runs only while the preview shows Claude at work', { plugins: [bystander] }, async ($, on) => {
+  const { clock } = await setup($, on, 'desktop')
+  const periods = async () => Number((await $.command.run({ command: 'periods', args: '' } as never)).text)
+
+  // A turn with no preview open: no timer, and the turn is still known when it opens.
+  await $.turn.start({ text: 'fix it', turnId: 't1' })
+  await seconds(clock, 4)
+  expect(await periods()).toBe(0)
+  await run($, 'preview')
+  const pane = await mountPreview($, 'desktop')
+  await clock.settle()
+  expect(await spinnerOf(pane)).toContain('4s')
+  await seconds(clock, 2)
+  expect(await periods()).toBeGreaterThan(0)
+  expect(await spinnerOf(pane)).toContain('6s')
+
+  // It stops with the turn,
+  await $.turn.complete({ ...turn, turnId: 't1' })
+  await clock.settle()
+  const atTurnEnd = await periods()
+  await seconds(clock, 3)
+  expect(await periods()).toBe(atTurnEnd)
+
+  // and with the preview.
+  await $.turn.start({ text: 'and the docs', turnId: 't2' })
+  await seconds(clock, 2)
+  expect(await periods()).toBeGreaterThan(atTurnEnd)
+  await $.command.run({ command: 'close', args: 'pair-preview' } as never)
+  await clock.settle()
+  const atClose = await periods()
+  await seconds(clock, 3)
+  expect(await periods()).toBe(atClose)
+})
+
+test('preview: an interrupted turn ends the spinner, and a call it left out does not carry into the next turn', async ($, on) => {
+  const { clock, w } = await setup($, on, 'terminal')
+  await run($, 'preview')
+  const pane = await mountPreview($)
+  await seconds(clock, 1)
+  await $.turn.start({ text: 'run the suite', turnId: 't1' })
+  const release = hold(w)
+  const call = $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
+  await clock.settle()
+  expect(await spinnerOf(pane)).toContain(SAYS.terminal.working)
+
+  await $.turn.complete({ ...turn, isAborted: true, reason: 'aborted', turnId: 't1' })
+  await clock.settle()
+  expect(await spinnerOf(pane)).toBeUndefined()
+  await $.turn.start({ text: 'try again', turnId: 't2' })
+  release()
+  await call
+  await clock.settle()
+  expect(await spinnerOf(pane)).toContain(SAYS.terminal.thinking)
+  expect(await pane.find({ text: WORKING })).toBeDefined()
 })

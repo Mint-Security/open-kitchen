@@ -5,7 +5,7 @@ import type { ElementTable, RenderElement, UiPressArgument } from 'claude-code'
 
 import type { PairEntry, PairPeerView } from '../../types'
 import { COLORS } from './style/colors'
-import { drawTranscript } from './style/transcript'
+import { drawSpinner, drawTranscript } from './style/transcript'
 import type { TranscriptOptions } from './style/transcript'
 
 export type PaneElements = Pick<ElementTable, 'Box' | 'Text' | 'Markdown' | 'Code' | 'Button'> & { Input?: ElementTable<'terminal'>['Input'] }
@@ -17,6 +17,8 @@ export type PaneModel = {
   entries: PairEntry[]
   // Rows kept out above the ones drawn.
   earlier: number
+  // The time, by the clock `peer.workingSince` is in.
+  now: number
   transcript: TranscriptOptions
   inputRound: number
   // Prefixes every key, so two panes can be drawn in one tree.
@@ -34,6 +36,8 @@ export const drawPairPane = (ui: PaneElements, m: PaneModel, act: PaneActions): 
   const { Box, Button, Text } = ui
   const { isHost, peer, keys } = m
   const isOnline = peer !== null && !peer.hasLeft && peer.isOnline
+  // The host has their own spinner; a guest gets this one.
+  const isWorking = !isHost && isOnline && peer?.isWorking === true
   return (
     <Box flexDirection="column" gap={1}>
       <Box flexDirection="column">
@@ -71,8 +75,9 @@ export const drawPairPane = (ui: PaneElements, m: PaneModel, act: PaneActions): 
             {act.more && <Button key={`${keys}-more`} label="Show more" onPress={act.more} />}
           </Box>
         )}
-        {m.entries.length === 0 && <Text dimColor>{isHost ? 'Nothing yet.' : 'Waiting for the host…'}</Text>}
+        {m.entries.length === 0 && !isWorking && <Text dimColor>{isHost ? 'Nothing yet.' : 'Waiting for the host…'}</Text>}
         {drawTranscript(ui, m.entries, { ...m.transcript, keys })}
+        {isWorking && drawSpinner(ui, { isThinking: !peer?.tool, since: peer?.workingSince ?? null }, m.now, { ...m.transcript, keys })}
       </Box>
 
       {!isHost && ui.Input && act.submit && (

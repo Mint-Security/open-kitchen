@@ -4,6 +4,7 @@ export const COLORS = {
   ok: 'success',
   problem: 'error',
   working: 'warning',
+  spinner: 'claude',
   promptMark: 'inactive',
   text: 'text'
 } as const
