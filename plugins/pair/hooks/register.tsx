@@ -109,6 +109,7 @@ const expandedAtom = atom({ plugin: 'pair', key: 'expanded' } as const, [])
 const linkAtom = atom({ plugin: 'pair', key: 'link' } as const, 'starting')
 const problemAtom = atom({ plugin: 'pair', key: 'problem' } as const, null)
 const sentFromPaneAtom = atom({ plugin: 'pair', key: 'sentFromPane' } as const, 0)
+const clockAtom = atom({ plugin: 'pair', key: 'clock' } as const, 0)
 
 type PollBody = {
   now: number
@@ -135,7 +136,12 @@ let isNameResolved = false
 let timer: Timer | null = null
 let myName = ''
 let dataDir = ''
+// When the main loop's turn under way began, and how many of its calls are not back yet.
 let workingSince: number | null = null
+let callsUnderWay = 0
+// The time the preview's spinner row counts to, and the timer that moves it while Claude works.
+let previewNow = 0
+let ticker: Timer | null = null
 let isPreviewOpen = false
 let previewReads = 0
 let previewError: string | null = null
@@ -145,7 +151,6 @@ let previewEvents: PairEvent[] = []
 let isPreviewBuilt = false
 let previewVersion = 0
 let previewEntries: { version: number; entries: PairEntry[] } | null = null
-let isMainTurnOpen = false
 let lastTool: string | null = null
 let tickStartedAt: number | null = null
 let tickRun = 0
@@ -611,7 +616,7 @@ async function setLink($: EngineInterface, next: PairLink) {
 }
 
 async function publishState($: EngineInterface, room: PairRoom, keys: RoomKeys) {
-  const state = stateFor(room, { name: myName, tool: lastTool, workingSince }, await $.clock.now())
+  const state = stateFor(room, { name: myName, tool: callsUnderWay > 0 ? lastTool : null, workingSince }, await $.clock.now())
   const signature = JSON.stringify(state)
   if (signature === sentSignature) return
   await writeShared($, room, STATE_FILE, { pid: room.pid, seq: 0, data: await seal(keys, aadFor(room.roomId, room.pid, 'state'), state) })
@@ -750,7 +755,7 @@ async function seatGuest($: EngineInterface, room: PairRoom, deviceId: string, p
     peerStateCache = null
     peerStateFile = null
   }
-  await update($, peerAtom, () => ({ pid, name: GUEST, isOnline: false, hasLeft: false, isWorking: false, tool: null }))
+  await update($, peerAtom, () => ({ pid, name: GUEST, isOnline: false, hasLeft: false, isWorking: false, tool: null, workingSince: null }))
   await note($, 'A guest joined')
   isConnected = false
   lastConnectedAt = 0
@@ -955,7 +960,9 @@ async function applyPoll($: EngineInterface, room: PairRoom, keys: RoomKeys, pol
       isOnline: poll.now - row.seenAt < ONLINE_MS,
       hasLeft: false,
       isWorking: state?.isWorking ?? false,
-      tool: state?.tool ? cleanToolName(state.tool) || null : null
+      tool: state?.tool ? cleanToolName(state.tool) || null : null,
+      // Timed from when this side first saw the turn, by its own clock: the host's may differ.
+      workingSince: state?.isWorking ? ((sameAsBefore && prev.isWorking ? prev.workingSince : null) ?? poll.now) : null
     }
     if (!sameAsBefore) await note($, isHost ? `${peer.name} joined` : `Watching ${peer.name}`)
     else if (prev.name !== peer.name) await note($, prev.name === fallback ? `Your guest is ${peer.name}` : `${prev.name} is now called ${peer.name}`)
@@ -1072,6 +1079,8 @@ async function tick($: EngineInterface) {
     await scanIfPending($, room)
     const poll = await readPeer($, room)
     if (poll) await applyPoll($, room, keys, poll)
+    // A guest's pane counts the host's turn a second at a time, and only while there is one.
+    if (room.role === 'guest' && (await read($, peerAtom))?.isWorking) await update($, clockAtom, () => nowMs)
     await updateSeatHint($, room)
     if (room.role === 'host') await forwardWaiting($)
     await submitForwards($, room)
@@ -1268,6 +1277,24 @@ function latestPreviewEntries(): PairEntry[] {
   return previewEntries.entries
 }
 
+// The spinner row counts the seconds while the preview shows Claude at work; no timer runs otherwise.
+function keepTime($: EngineInterface) {
+  const isCounting = isPreviewOpen && workingSince !== null
+  if (isCounting && !ticker) ticker = $.clock.every(1000, () => detach(showWorking($)))
+  if (!isCounting && ticker) {
+    ticker.cancel()
+    ticker = null
+  }
+}
+
+// Claude started or finished something, or a second went by: the preview draws it now.
+async function showWorking($: EngineInterface) {
+  keepTime($)
+  if (!isPreviewOpen) return
+  previewNow = await $.clock.now()
+  await update($, previewTickAtom, tick => tick + 1)
+}
+
 // A reload of this module finds the preview still open: it starts again from the session so far.
 async function resumePreview($: EngineInterface) {
   if (!(await $.ui.panes()).some(pane => pane.id === PREVIEW)) return
@@ -1311,6 +1338,7 @@ async function openPreview($: EngineInterface): Promise<string> {
   arePreviewRowsOpen = false
   await $.ui.open({ id: PREVIEW, title: 'Pair preview' })
   detach(readPreview($))
+  detach(showWorking($))
   return `The preview shows this session as ${room ? 'your guest sees' : 'a guest would see'} it, and follows it as you work.`
 }
 
@@ -1477,9 +1505,12 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
-    isMainTurnOpen = true
-    workingSince = await $.clock.now()
-    lastTool = null
+    if (!e.agentId) {
+      workingSince = await $.clock.now()
+      lastTool = null
+      callsUnderWay = 0
+      detach(showWorking($))
+    }
 
     return next(e)
   })
@@ -1499,9 +1530,16 @@ export const register: Register = (on, options) => {
   })
 
   on('tool.call', async ($, e, next) => {
+    if (e.agentId) return next(e)
     lastTool = e.tool
-    const result = await next(e)
-    if (isSharing() && !e.agentId) {
+    // Running from here: `next(e)` runs the permission prompt too, and the host's transcript shows a call
+    // waiting on it the same way.
+    callsUnderWay++
+    detach(showWorking($))
+    const result = await next(e).finally(() => {
+      callsUnderWay = Math.max(0, callsUnderWay - 1)
+    })
+    if (isSharing()) {
       try {
         // The call's arguments ride on the event itself, beside the envelope's own fields.
         const { tool: _tool, tool_use_id: _id, agentId: _agent, consent: _consent, ...input } = e as Record<string, unknown>
@@ -1520,7 +1558,7 @@ export const register: Register = (on, options) => {
     if (!e.agentId) {
       workingSince = null
       lastTool = null
-      isMainTurnOpen = false
+      detach(showWorking($))
     }
 
     return next(e)
@@ -1551,7 +1589,10 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.close', ($, e, next) => {
-    if (e.id === PREVIEW) isPreviewOpen = false
+    if (e.id === PREVIEW) {
+      isPreviewOpen = false
+      keepTime($)
+    }
 
     return next(e)
   })
@@ -1582,6 +1623,7 @@ export const register: Register = (on, options) => {
     const problem = await read($, problemAtom)
     const expanded = await read($, expandedAtom)
     const sentFromPane = await read($, sentFromPaneAtom)
+    const clock = await read($, clockAtom)
     const ui = $.ui.resolve(e)
     const { Box, Button, Code, Markdown, Text } = ui
 
@@ -1596,6 +1638,7 @@ export const register: Register = (on, options) => {
       notices: noticesOf(isHost, peer, link, problem),
       entries: log,
       earlier: 0,
+      now: clock,
       transcript: {
         columns: e.props.bodyColumns,
         bullet,
@@ -1641,8 +1684,9 @@ export const register: Register = (on, options) => {
     }
     const all = isPreviewBuilt ? latestPreviewEntries() : []
     const shown = all.slice(-previewRows)
-    const guest: PairPeerView = peer ?? { name: 'your guest', isOnline: true, hasLeft: false, isWorking: false, tool: null }
-    const host: PairPeerView = { name: hostLabel(), isOnline: true, hasLeft: false, isWorking: isMainTurnOpen, tool: isMainTurnOpen ? lastTool : null }
+    const guest: PairPeerView = peer ?? { name: 'your guest', isOnline: true, hasLeft: false, isWorking: false, tool: null, workingSince: null }
+    const isWorking = workingSince !== null
+    const host: PairPeerView = { name: hostLabel(), isOnline: true, hasLeft: false, isWorking, tool: isWorking && callsUnderWay > 0 ? lastTool : null, workingSince }
 
     return drawPreview(
       elements,
@@ -1653,6 +1697,7 @@ export const register: Register = (on, options) => {
         notices: [],
         entries: room ? log : [],
         earlier: 0,
+        now: previewNow,
         transcript: { ...transcript, me: myName || 'you' },
         inputRound: 0,
         keys: 'preview'
@@ -1667,6 +1712,7 @@ export const register: Register = (on, options) => {
             : [{ text: 'Reading this session…', isError: false }],
         entries: shown,
         earlier: all.length - shown.length,
+        now: previewNow,
         transcript,
         inputRound: e.surface === 'terminal' ? 0 : sentFromPane,
         keys: 'preview-guest'

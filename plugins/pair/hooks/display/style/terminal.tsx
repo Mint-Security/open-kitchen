@@ -5,7 +5,7 @@ import type { RenderElement } from 'claude-code'
 
 import type { PairEntry, PairSpan, PairToolView } from '../../../types'
 import { COLORS } from './colors'
-import type { Elements, TranscriptOptions } from './transcript'
+import type { Elements, Spinner, TranscriptOptions } from './transcript'
 
 // As the transcript does: tool output wrapped ten columns short of the width, three lines of it shown
 // (four when that is all there is).
@@ -14,6 +14,30 @@ const WRAP_MARGIN = 10
 const HUNG = '  ⎿  '
 
 export const moreLines = (n: number): string => `… +${n} ${n === 1 ? 'line' : 'lines'}`
+
+// The glyph Claude Code's spinner turns through, held still.
+export const SPINNER = '✻'
+
+// As Claude Code times a turn: `3s`, `1m 4s`.
+export const durationOf = (ms: number): string => {
+  const seconds = Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : 0
+  const minutes = Math.floor(seconds / 60)
+  if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+  return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`
+}
+
+// The spinner under the transcript: `✻ Thinking… (12s)`.
+export const drawTerminalSpinner = (ui: Elements, spinner: Spinner, now: number, options: TranscriptOptions): RenderElement => {
+  const { Box, Text } = ui
+  return (
+    <Box key={`${options.keys ?? 'pair'}-spinner`}>
+      <Text>
+        <Text color={COLORS.spinner}>{`${SPINNER} ${spinner.isThinking ? 'Thinking' : 'Working'}…`}</Text>
+        {spinner.since !== null && <Text dimColor>{` (${durationOf(now - spinner.since)})`}</Text>}
+      </Text>
+    </Box>
+  )
+}
 
 export const foldOutput = (lines: readonly string[], totalLines: number, columns: number): { shown: string[]; hidden: number } => {
   const width = Math.max(columns - WRAP_MARGIN, 10)

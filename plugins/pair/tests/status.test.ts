@@ -19,7 +19,7 @@ const host: PairRoom = {
   startedAt: 0
 }
 const guest: PairRoom = { ...host, role: 'guest' }
-const dana = (patch: Partial<PairPeer> = {}): PairPeer => ({ pid: 'dana0001', name: 'Dana', isOnline: true, hasLeft: false, isWorking: false, tool: null, ...patch })
+const dana = (patch: Partial<PairPeer> = {}): PairPeer => ({ pid: 'dana0001', name: 'Dana', isOnline: true, hasLeft: false, isWorking: false, tool: null, workingSince: null, ...patch })
 
 test('the status line says where the pairing stands, from either side', () => {
   const cases: [PairRoom | null, PairPeer | null, PairLink, string | undefined][] = [

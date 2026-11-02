@@ -7,9 +7,9 @@ import type { RenderElement } from 'claude-code'
 
 import type { PairEntry, PairToolView } from '../../../types'
 import { COLORS } from './colors'
-import { drawEntry, drawTool } from './terminal'
+import { SPINNER, drawEntry, drawTool, durationOf } from './terminal'
 import type { ToolEntry } from './terminal'
-import type { Elements, TranscriptOptions } from './transcript'
+import type { Elements, Spinner, TranscriptOptions } from './transcript'
 
 export type DesktopTool = { tool: string; view: PairToolView; isError: boolean }
 
@@ -170,3 +170,15 @@ export const drawDesktop = (ui: Elements, entries: readonly PairEntry[], options
         return drawEntry(ui, entry, options)
     }
   })
+
+// The app's spinner row: Claude's mark, what it is doing, and how long the turn has taken.
+export const drawDesktopSpinner = (ui: Elements, spinner: Spinner, now: number, options: TranscriptOptions): RenderElement => {
+  const { Box, Text } = ui
+  return (
+    <Box key={`${options.keys ?? 'pair'}-spinner`} flexDirection="row" gap={1}>
+      <Text color={COLORS.spinner}>{SPINNER}</Text>
+      <Text>{spinner.isThinking ? 'Thinking' : 'Working'}</Text>
+      {spinner.since !== null && <Text dimColor>{durationOf(now - spinner.since)}</Text>}
+    </Box>
+  )
+}
