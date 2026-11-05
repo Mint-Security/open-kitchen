@@ -2,6 +2,8 @@
 
 Share a Claude Code session, peer to peer with no backend. The host runs `/pair` and gets an invite; whoever pastes it watches the host's session live, drawn the way the host's own Claude Code draws it, and can talk to the host's Claude under their own name.
 
+![Demo on two laptops: the host runs /pair, the guest pastes the invite and watches the host's session, asks the host's Claude a question and sees the answer arrive, then the host stops sharing.](../../.github/assets/pair-demo.gif)
+
 It is one session, hosted where it already runs: the host's machine, repo and credentials. The guest needs none of that, only the invite. The two machines talk peer to peer through [Syncthing](https://syncthing.net): there is no server to run and no account to make.
 
 ## Try it
