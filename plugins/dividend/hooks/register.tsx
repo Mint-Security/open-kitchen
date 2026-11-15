@@ -201,7 +201,8 @@ async function startHere($: EngineInterface, cwd: string, isSessionInteractive: 
   await startSession($)
   await sync($)
   const now = await $.clock.now()
-  await withdrawUnread($, id => isStaleBreakTip(id, session.sessionKey, figures.lastAnswerAt) || isPastLimitTip(id, now))
+  await withdrawUnread($, id => isStaleBreakTip(id, session.sessionKey, figures.lastAnswerAt))
+  await withdraw($, tip => isPastLimitTip(tip.id, now))
   await refreshStatus($)
   detach(checkResumed($))
   detach(checkStartModel($))
@@ -240,7 +241,8 @@ async function switchConversation($: EngineInterface, { isBetweenMessages }: { i
   await startSession($, { isClear: true })
   await sync($)
   const now = await $.clock.now()
-  await withdrawUnread($, id => isStaleBreakTip(id, session.sessionKey, figures.lastAnswerAt) || isPastLimitTip(id, now))
+  await withdrawUnread($, id => isStaleBreakTip(id, session.sessionKey, figures.lastAnswerAt))
+  await withdraw($, tip => isPastLimitTip(tip.id, now))
   await refreshStatus($)
   $.ui.invalidate('ui.render')
   if (isBetweenMessages) {
@@ -341,7 +343,7 @@ async function observe($: EngineInterface, { isAnswer = false, model = figures.p
   figures.cacheTtl = cacheTtl
   const seen = usageOf({ counted, rateLimits, session, figures, hasAnswered: answeredTurns > 0, now })
   await update($, usage, () => seen)
-  await withdrawUnread($, id => isPastLimitTip(id, now))
+  await withdraw($, tip => isPastLimitTip(tip.id, now))
   await addTips($, usageTips(seen, usageContext(now)))
   await refreshStatus($)
 }
@@ -655,7 +657,11 @@ async function addTips($: EngineInterface, candidates: Tip[]) {
 // session or restart brings them back.
 async function withdrawUnread($: EngineInterface, isMoot: (id: string) => boolean) {
   const reacted = await read($, reactions)
-  const gone = (await read($, tips)).filter(tip => isMoot(tip.id) && !isSettled(tip, reacted)).map(tip => tip.id)
+  await withdraw($, tip => isMoot(tip.id) && !isSettled(tip, reacted))
+}
+
+async function withdraw($: EngineInterface, isGone: (tip: DividendTip) => boolean) {
+  const gone = (await read($, tips)).filter(isGone).map(tip => tip.id)
   if (gone.length === 0) {
     return
   }
