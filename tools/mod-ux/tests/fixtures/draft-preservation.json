@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "Draft survives opening a mod pane",
+  "goal": "Write an unsent draft, then open the synthetic usage pane without losing the draft.",
+  "target": { "app": "com.anthropic.claudefordesktop" },
+  "allowedActions": ["type", "click", "wait"],
+  "checks": [
+    { "id": "draft-preserved", "kind": "preserved", "selector": { "role": "text field", "label": "Prompt" }, "after": { "role": "button", "label": "Usage" } },
+    { "id": "pane-visible", "kind": "present", "selector": { "label": "Your session usage" } }
+  ],
+  "limits": { "maxSteps": 5, "maxDurationMs": 30000 }
+}

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Dismiss a Dividend tip while keeping a draft",
+  "goal": "In this disposable session, dismiss the currently visible Dividend tip with Got it, then inspect whether the tip is gone and whether the existing unsent draft 'UX lab draft — do not send' is still intact. Do not submit anything. If the tip is already gone, report that the dismissal task could not be exercised.",
+  "target": { "app": "com.anthropic.claudefordesktop", "interactionMode": "foreground" },
+  "constraints": [
+    "Use only the prepared disposable session. Do not navigate to other conversations.",
+    "Do not submit, type into or delete the existing draft, approve tools, switch models or install anything.",
+    "Only Got it is authorized for dismissal. Do not use Don't show these, which changes persistent preferences."
+  ],
+  "allowedActions": ["click", "click_point", "wait"],
+  "checks": [
+    { "id": "draft-preserved", "kind": "preserved", "selector": { "label": "Prompt" }, "after": { "label": "Got it" } },
+    { "id": "tip-dismissed", "kind": "disappeared", "selector": { "label": "Got it" }, "after": { "label": "Got it" } },
+    { "id": "draft-returned", "kind": "present", "selector": { "label": "Prompt", "value": "UX lab draft — do not send" } }
+  ],
+  "limits": { "maxSteps": 8, "maxDurationMs": 180000, "agentTimeoutMs": 60000 }
+}

@@ -7,6 +7,7 @@ Thanks for helping. Issues and pull requests are welcome.
 ```bash
 npm ci
 npm run lint
+npm run test:mod-ux
 claude plugin validate .
 claude plugin validate plugins/dividend
 claude plugin test plugins/dividend

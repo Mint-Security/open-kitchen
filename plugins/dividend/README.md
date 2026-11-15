@@ -56,3 +56,7 @@ Dividend keeps its data in Claude Code's plugin store, a JSON file of its own un
 - **Your choice before the prompt cache expires**, once you make one.
 
 All of it stays until `/dividend reset`, which deletes everything Dividend saved.
+
+## Development: desktop UX evaluations
+
+Dividend owns its [desktop UX scenarios](ux-evals/README.md). They run through the generic Mod UX Lab harness; the case documentation describes the labels and manually prepared state each one requires.

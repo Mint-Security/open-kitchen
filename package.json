@@ -2,7 +2,9 @@
   "name": "open-kitchen",
   "private": true,
   "scripts": {
-    "lint": "biome lint"
+    "lint": "biome lint",
+    "mod-ux": "node tools/mod-ux/cli.mjs",
+    "test:mod-ux": "node --test tools/mod-ux/tests/*.test.mjs plugins/dividend/ux-evals/*.test.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15"
