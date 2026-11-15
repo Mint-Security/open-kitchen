@@ -66,7 +66,7 @@ export const isTipHere = (id: string, here: { sessionKey: string; projectKey: st
   return id.split(':')[2] === (scope === 'session' ? here.sessionKey : here.projectKey)
 }
 
-// A limit tip about a window that has since reset no longer holds.
+// A limit tip about a window that has since reset no longer holds, read or not: it speaks of that window as now.
 export const isPastLimitTip = (id: string, now: number): boolean => {
   const match = /^tip:(?:rate-limit|wall):[^:]+:(.+)$/.exec(id)
   const resetsAt = match?.[1] ? Date.parse(match[1]) : Number.NaN

@@ -1490,6 +1490,39 @@ test('a limit tip about a window that has reset is taken back, and the status li
   expect(w.statuses.at(-1)).not.toContain('5h 20%')
 })
 
+test('a limit tip about a window that has reset leaves the pane though it was read or its kind turned off', async ($, on) => {
+  const fiveHour = `tip:rate-limit:five_hour:${new Date(NOW - 3600 * 1000).toISOString()}`
+  const weekly = `tip:rate-limit:seven_day:${new Date(NOW - 9 * 86400 * 1000).toISOString()}`
+  const saved = {
+    dividend: {
+      tips: [
+        { id: fiveHour, title: '85% of your 5-hour limit is used', body: 'b', receivedAt: 1 },
+        { id: weekly, title: '81% of your weekly limit is used', body: 'b', receivedAt: 2 }
+      ],
+      reactions: { [fiveHour]: 'seen', [weekly]: 'not-relevant' }
+    }
+  }
+  const { w } = await start($, on, 'terminal', saved)
+  const pane = await $.ui.mount({ plugin: 'dividend', surface: 'terminal', component: 'Pane', requestId: 'dividend', props: PANE })
+  expect(await pane.find({ text: /5-hour limit|weekly limit/ })).toBeUndefined()
+  const store = w.store.dividend as { tips: { id: string }[]; withdrawn: string[] }
+  expect(store.tips).toEqual([])
+  expect(store.withdrawn).toContain(fiveHour)
+  expect(store.withdrawn).toContain(weekly)
+})
+
+test('a limit tip turned off and then taken back keeps its kind off for the next window', async ($, on) => {
+  const weekly = `tip:rate-limit:seven_day:${new Date(NOW - 9 * 86400 * 1000).toISOString()}`
+  const saved = { dividend: { tips: [{ id: weekly, title: '81% of your weekly limit is used', body: 'b', receivedAt: 1 }], reactions: { [weekly]: 'not-relevant' } } }
+  const { clock, w } = await start($, on, 'terminal', saved)
+  expect((w.store.dividend as { withdrawn: string[] }).withdrawn).toContain(weekly)
+
+  w.reading = { ...SEAT, rateLimits: [...SEAT.rateLimits, { kind: 'seven_day', percentUsed: 85, resetsAt: new Date(NOW + 86400 * 1000).toISOString() }] }
+  await turn($, clock)
+  expect(tipTitles(w).filter(title => title.includes('weekly'))).toEqual([])
+  expect((w.store.dividend as { reactions: Record<string, string> }).reactions[weekly]).toBe('not-relevant')
+})
+
 test('a /resume inside the session starts the counts over for the resumed conversation', async ($, on) => {
   const { clock, w } = await start($, on)
   w.reading = { ...w.reading, context: { tokens: 124_000, window: 200_000, percent: 62 } }
