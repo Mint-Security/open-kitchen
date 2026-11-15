@@ -27,6 +27,14 @@ These plugins run inside Claude Code with your permissions, so each one's README
 
 Issues and pull requests are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md). Please send security reports to opensource@mint.security.
 
+## Desktop mod UX testing
+
+[Mod UX Lab](tools/mod-ux/README.md) is an experimental local harness for testing Claude Desktop mods with a terminal tester agent, screen/action recordings, observable checks and a separate UX critic. Try the synthetic regression demo without desktop permissions or model calls:
+
+```bash
+npm run mod-ux -- demo
+```
+
 ## License
 
 [Apache-2.0](LICENSE)

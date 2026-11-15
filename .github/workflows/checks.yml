@@ -25,6 +25,8 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run lint
+      - name: Test desktop UX harness (fixtures only)
+        run: npm run test:mod-ux
 
   test:
     runs-on: ubuntu-latest

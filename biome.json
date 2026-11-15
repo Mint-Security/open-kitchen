@@ -1,7 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
   "files": {
-    "includes": ["**", "!plugins/*/.claude-plugin/types"]
+    "includes": ["**", "!plugins/*/.claude-plugin/types", "!**/.claude/worktrees/**", "!**/.mod-ux/**"]
   },
   "formatter": { "enabled": false },
   "assist": { "enabled": false },
