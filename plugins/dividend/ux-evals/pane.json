@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Guided Dividend pane and draft preservation",
-  "goal": "The current unsent draft is 'UX lab draft — do not send'. Keep it unchanged. Open Dividend through its visible All tips control, inspect the This session information, close the Dividend view and return to the same unsent draft. Report what information you could inspect. Do not submit a message.",
+  "goal": "The current unsent draft is 'UX lab draft — do not send'. Keep it unchanged. Open Dividend through the visible Usage & tips button on the tip above the prompt, inspect the This session information, close the Dividend view and return to the same unsent draft. Report what information you could inspect. Do not submit a message.",
   "target": { "app": "com.anthropic.claudefordesktop", "interactionMode": "foreground" },
   "constraints": [
     "Use only the prepared disposable session. Do not navigate to other conversations.",
@@ -10,8 +10,8 @@
   ],
   "allowedActions": ["click", "click_point", "scroll", "wait"],
   "checks": [
-    { "id": "draft-preserved", "kind": "preserved", "selector": { "label": "Prompt" }, "after": { "label": "All tips" } },
-    { "id": "pane-opened", "kind": "appeared", "selector": { "label": "This session" }, "after": { "label": "All tips" } },
+    { "id": "draft-preserved", "kind": "preserved", "selector": { "label": "Prompt" }, "after": { "label": "Usage & tips" } },
+    { "id": "pane-opened", "kind": "appeared", "selector": { "label": "This session" }, "after": { "label": "Usage & tips" } },
     { "id": "pane-closed", "kind": "absent", "selector": { "label": "This session" } },
     { "id": "draft-returned", "kind": "present", "selector": { "label": "Prompt", "value": "UX lab draft — do not send" } }
   ],

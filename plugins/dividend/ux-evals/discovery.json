@@ -10,8 +10,8 @@
   ],
   "allowedActions": ["click", "click_point", "type", "scroll", "wait"],
   "checks": [
-    { "id": "draft-preserved", "kind": "preserved", "selector": { "label": "Prompt" }, "after": { "label": "All tips" } },
-    { "id": "pane-opened", "kind": "appeared", "selector": { "label": "This session" }, "after": { "label": "All tips" } },
+    { "id": "draft-preserved", "kind": "preserved", "selector": { "label": "Prompt" }, "after": { "label": "Usage & tips" } },
+    { "id": "pane-opened", "kind": "appeared", "selector": { "label": "This session" }, "after": { "label": "Usage & tips" } },
     { "id": "pane-closed", "kind": "absent", "selector": { "label": "This session" } },
     { "id": "draft-returned", "kind": "present", "selector": { "label": "Prompt", "value": "UX lab draft — do not send" } }
   ],

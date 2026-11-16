@@ -1,8 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine, MockClock } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { On, Plugin } from 'claude-code'
 
 import { keyOf } from '../hooks/display/format'
+import { OPEN_LABEL } from '../hooks/display/views'
 import { KEEP_ALIVE_PROMPT } from '../hooks/tips/cache'
 
 const SITE = { bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} }
@@ -10,6 +11,18 @@ const BAND = { hasSurvey: false, isWorking: false, maxRows: 12, ...SITE }
 const PANE = { title: 'Dividend', isFocused: true, placement: 'dock' as const, ...SITE }
 const NOW = Date.parse('2026-10-07T10:00:00Z')
 const SUMMARY = { role: 'user' as const, text: 'Summary of the conversation so far', toolUses: [] }
+
+// A person closing a pane goes through ui.close, which only plugin hooks can call.
+const paneControls: Plugin = {
+  name: 'pane-controls',
+  register(on) {
+    on('command.run', async ($, e, next) => {
+      if (e.command !== 'test-close-pane') return next(e)
+      await $.ui.close({ id: e.args })
+      return { text: 'Closed test pane.' }
+    })
+  },
+}
 
 type Reading = {
   context: { tokens?: number; window: number; percent?: number }
@@ -47,9 +60,11 @@ const makeWorld = (on: On, clock: MockClock, stored: Record<string, unknown> = {
     toasts: [] as string[],
     statuses: [] as (string | undefined)[],
     opened: [] as string[],
+    panes: [] as { id: string; title: string; isShown: boolean; isPlaced: boolean; isFocused: boolean }[],
     otherBand: null as string | null,
     openedFiles: [] as string[][],
     openExit: 0,
+    paneRefusal: null as string | null,
     draft: '',
     fills: [] as { text: string; mode?: string }[],
     isFillable: true,
@@ -93,8 +108,20 @@ const makeWorld = (on: On, clock: MockClock, stored: Record<string, unknown> = {
     return { value: undefined }
   })
   on('ui.open', (_$, e) => {
+    if (w.paneRefusal) {
+      return { deny: w.paneRefusal }
+    }
     w.opened.push(e.id)
+    w.panes = [
+      ...w.panes.filter(pane => pane.id !== e.id).map(pane => ({ ...pane, isShown: false })),
+      { id: e.id, title: e.title ?? e.id, isShown: true, isPlaced: true, isFocused: false },
+    ]
     return { value: { isPlaced: true } }
+  })
+  on('ui.panes', () => ({ value: w.panes }))
+  on('ui.close', (_$, e) => {
+    w.panes = w.panes.filter(pane => pane.id !== e.id)
+    return { value: undefined }
   })
   on('session.compact', (_$, e) => {
     if (w.compactError) {
@@ -223,6 +250,117 @@ test('/dividend with anything else lists the commands', async ($, on) => {
   const answer = (await $.command.run({ command: 'dividend', args: 'hello there' } as never)).text ?? ''
   expect(answer).toBe('/dividend opens the pane, /dividend session shows the prompt cache and the instruction files, /dividend compact compacts with a brief to carry on from, /dividend learn explains how it all works, /dividend reset clears the tips.')
 })
+
+test('a tip opens the pane with Usage & tips, and with no tip nothing of Dividend sits above the prompt', async ($, on) => {
+  const { clock, w } = await start($, on, 'desktop')
+  expect(await (await band($, 'desktop')).find({ key: 'dividend-open' })).toBeUndefined()
+  w.reading = { ...w.reading, context: { tokens: 124_000, window: 200_000, percent: 62 } }
+  await turn($, clock)
+  const above = await band($, 'desktop')
+  const button = await above.find({ key: 'dividend-open' })
+  expect(button?.props.label).toBe('Usage & tips')
+  expect(button?.props.dimColor).not.toBe(true)
+  await above.press({ key: 'dividend-seen' })
+  await above.redraw()
+  expect(await above.find({ key: 'dividend-open' })).toBeUndefined()
+})
+
+// The desktop UX scenarios find the pane's entry point by this label (ux-evals/scenarios.test.mjs holds them to it).
+test('the entry point is drawn with the label the desktop UX scenarios click', async ($, on) => {
+  const { clock, w } = await start($, on, 'desktop')
+  w.reading = { ...w.reading, context: { tokens: 124_000, window: 200_000, percent: 62 } }
+  await turn($, clock)
+  expect((await (await band($, 'desktop')).find({ key: 'dividend-open' }))?.props.label).toBe(OPEN_LABEL)
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`a visible Dividend pane replaces its inline tip and closing it restores the tip (${surface})`, { plugins: [paneControls] }, async ($, on) => {
+    const { clock, w } = await start($, on, surface)
+    w.draft = 'Keep this unsent draft'
+    w.reading = { ...w.reading, context: { tokens: 124_000, window: 200_000, percent: 62 } }
+    await turn($, clock)
+    const above = await band($, surface)
+    await above.press({ key: 'dividend-open' })
+    await settle(clock)
+    await above.redraw()
+    expect(await above.find({ text: 'Every message now carries 124k tokens' })).toBeUndefined()
+    expect(await above.find({ key: 'dividend-open' })).toBeUndefined()
+    const view = await $.ui.mount({ plugin: 'dividend', surface, component: 'Pane', requestId: 'dividend', props: PANE })
+    expect(await view.find({ text: 'Every message now carries 124k tokens' })).toBeDefined()
+    await $.command.run({ command: 'test-close-pane', args: 'dividend' } as never)
+    await settle(clock)
+    await above.redraw()
+    expect(await above.find({ text: 'Every message now carries 124k tokens' })).toBeDefined()
+    expect(w.draft).toBe('Keep this unsent draft')
+    expect(w.fills).toEqual([])
+    expect(w.submissions).toEqual([])
+  })
+}
+
+test('a tip held back for the open pane comes back once the pane goes behind another tab, with no close', async ($, on) => {
+  const { clock, w } = await start($, on)
+  w.reading = { ...w.reading, context: { tokens: 124_000, window: 200_000, percent: 62 } }
+  await turn($, clock)
+  const above = await band($)
+  await above.press({ key: 'dividend-open' })
+  await settle(clock)
+  await above.redraw()
+  expect(await above.find({ text: 'Every message now carries 124k tokens' })).toBeUndefined()
+  w.panes = w.panes.map(pane => ({ ...pane, isShown: false }))
+  await clock.advance(2000)
+  await settle(clock)
+  expect(await above.find({ text: 'Every message now carries 124k tokens' })).toBeDefined()
+})
+
+test('a refused pane says so in a toast, from a tip and from /dividend', async ($, on) => {
+  const { clock, w } = await start($, on, 'desktop')
+  w.reading = { ...w.reading, context: { tokens: 124_000, window: 200_000, percent: 62 } }
+  await turn($, clock)
+  w.paneRefusal = 'Panes are off here'
+  const above = await band($, 'desktop')
+  await above.press({ key: 'dividend-open' })
+  await settle(clock)
+  await $.command.run({ command: 'dividend', args: '' } as never)
+  await settle(clock)
+  expect(w.opened).toEqual([])
+  expect(w.toasts.filter(text => text.startsWith("Dividend's pane didn't open"))).toHaveLength(2)
+  expect(w.toasts.at(-1)).toContain('Panes are off here')
+})
+
+test('a pane waiting for space or hidden behind a tab leaves the inline tip available', async ($, on) => {
+  const { clock, w } = await start($, on)
+  w.reading = { ...w.reading, context: { tokens: 124_000, window: 200_000, percent: 62 } }
+  await turn($, clock)
+  const above = await band($)
+  for (const state of [{ isPlaced: false, isShown: true }, { isPlaced: true, isShown: false }]) {
+    w.panes = [{ id: 'dividend', title: 'Dividend', isFocused: false, ...state }]
+    await above.redraw()
+    expect(await above.find({ text: 'Every message now carries 124k tokens' })).toBeDefined()
+  }
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  for (const columns of [28, 100]) {
+    test(`instruction file counts and open actions survive a ${columns}-column pane (${surface})`, async ($, on) => {
+      const { clock, w } = await start($, on, surface, {}, undefined, { HOME: '/home/dana' })
+      w.memoryFiles = [
+        { path: '/home/dana/.claude/projects/repo/memory/MEMORY.md', type: 'Auto', tokens: 108 },
+        { path: '/home/dana/.claude/CLAUDE.md', type: 'User', tokens: 12 },
+        { path: '/work/repo/AGENTS.md', type: 'Project', tokens: 12 },
+      ]
+      await turn($, clock)
+      const view = await $.ui.mount({ plugin: 'dividend', surface, component: 'Pane', requestId: 'dividend', props: { ...PANE, bodyColumns: columns } })
+      expect(await view.find({ text: '132 tokens' })).toBeDefined()
+      for (const file of w.memoryFiles) {
+        expect(await view.find({ key: `dividend-open-${keyOf(file.path)}` })).toBeDefined()
+      }
+      await view.press({ key: `dividend-open-${keyOf('/work/repo/AGENTS.md')}` })
+      await settle(clock)
+      expect(w.openedFiles.at(-1)).toEqual(['xdg-open', '/work/repo/AGENTS.md'])
+      expect(w.submissions).toEqual([])
+    })
+  }
+}
 
 const RESUMED: Reading = { context: { tokens: 120_000, window: 200_000, percent: 60 }, rateLimits: [], cost: { usd: 1.1 } }
 const cold = (model = 'claude-haiku-4-5'): Usage => ({ input_tokens: 10, output_tokens: 40, cache_read_input_tokens: 0, cache_creation_input_tokens: 125_000, model })
@@ -435,6 +573,55 @@ test('a tip not yet read keeps its figures current; once read it stays as it was
   await turn($, clock)
   const pane = await $.ui.mount({ plugin: 'dividend', surface: 'terminal', component: 'Pane', requestId: 'dividend', props: PANE })
   expect(await pane.find({ text: 'Every message now carries 140k tokens' })).toBeDefined()
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  for (const reaction of ['seen', 'not-relevant'] as const) {
+    test(`a retained ${reaction} usage warning is historical while current usage is lower (${surface})`, async ($, on) => {
+      const reset = new Date(NOW + 3600_000).toISOString()
+      const id = `tip:rate-limit:five_hour:${reset}`
+      const stored = { dividend: {
+        tips: [{ id, title: '99% of your 5-hour limit is used', body: 'Wrap up before it runs out.', receivedAt: NOW - 60_000 }],
+        reactions: { [id]: reaction },
+      } }
+      const reading = { ...SEAT, rateLimits: [
+        { kind: 'five_hour', percentUsed: 13, resetsAt: reset },
+        { kind: 'seven_day', percentUsed: 85, resetsAt: new Date(NOW + 86400_000).toISOString() },
+      ] }
+      const { clock, w } = await start($, on, surface, stored, reading)
+      await turn($, clock)
+      const view = await $.ui.mount({ plugin: 'dividend', surface, component: 'Pane', requestId: 'dividend', props: PANE })
+      expect(await view.find({ text: 'Earlier warning: 99% of your 5-hour limit is used' })).toBeDefined()
+      expect(await view.find({ text: 'Saved warning. The status line shows current usage.' })).toBeDefined()
+      expect(await view.find({ text: /Earlier warning: 85%/ })).toBeUndefined()
+      expect(Boolean(await view.find({ text: /85% of your weekly limit is used/ }))).toBe(reaction === 'seen')
+      expect(w.statuses.at(-1)).toContain('5h 13%')
+      expect(w.draft).toBe('')
+      expect(w.submissions).toEqual([])
+    })
+  }
+}
+
+test('a usage warning put off with Later is not called an earlier warning', async ($, on) => {
+  const { clock } = await start($, on)
+  await turn($, clock)
+  await $.turn.start({ text: 'one more', turnId: 'wall-later' } as never)
+  await $.session.measure({
+    context: SEAT.context,
+    rateLimits: [{ kind: 'five_hour', percentUsed: 96, resetsAt: new Date(NOW + 3600 * 1000).toISOString() }],
+    cost: { usd: 2 },
+    changed: ['rateLimits']
+  } as never)
+  await settle(clock)
+  const above = await band($)
+  expect(await above.find({ text: '96% of your 5-hour limit is used' })).toBeDefined()
+  await above.press({ key: 'dividend-later' })
+  await settle(clock)
+  const view = await $.ui.mount({ plugin: 'dividend', surface: 'terminal', component: 'Pane', requestId: 'dividend', props: PANE })
+  expect(await view.find({ text: 'saved for later' })).toBeDefined()
+  expect(await view.find({ text: /96% of your 5-hour limit is used/ })).toBeDefined()
+  expect(await view.find({ text: /Earlier warning/ })).toBeUndefined()
+  expect(await view.find({ text: 'Saved warning. The status line shows current usage.' })).toBeUndefined()
 })
 
 test('the instruction-files tip names the heavy places, with files as the project knows them, and restates an older unread one', async ($, on) => {
@@ -1813,7 +2000,7 @@ const ONE_TIP = {
   compact: { id: KIND_IDS.breakpoint!, title: 'A tip', action: 'compact' as const },
   ask: { id: KIND_IDS.memory!, title: 'A tip' },
 }
-const REST = ["Don't show these [n]", 'Later [l]', 'All tips [o]']
+const REST = ["Don't show these [n]", 'Later [l]', 'Usage & tips [o]']
 
 for (const [name, tip, isWorking, buttons] of [
   ['nothing to do', ONE_TIP.plain, false, ['Got it [y] *', ...REST]],

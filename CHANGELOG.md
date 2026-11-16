@@ -30,6 +30,14 @@ First release candidate.
 - Everything from the other side is cleaned before it is shown.
 - Requires Claude Code 2.1.291 or newer, on macOS or Linux.
 
+## dividend 0.1.2
+
+- A plan-limit tip leaves once its window resets, whether or not it was read or its kind turned off. A muted weekly tip used to stay in the pane long after its reset.
+- A limit tip you have already read or muted, shown while its window is still open, now says *Earlier warning* and points to the status line for current usage, instead of sitting unexplained beside a lower figure.
+- The band's *All tips* button is now *Usage & tips*, no longer dimmed, so the way into the pane says what is in it.
+- While the Dividend pane is open, the same tip no longer shows above the prompt too; it comes back when the pane closes.
+- In a narrow pane, instruction-file labels sit above their buttons, and the instruction files' total says *tokens*.
+
 ## dividend 0.1.1
 
 - A session that opens on Mythos or Fable suggests Opus 5.5, while switching re-caches little. Turned off with the other limit tips, or by *Don't show these*.

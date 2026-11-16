@@ -23,7 +23,7 @@ export function validateScenario(value) {
     ids.add(check.id);
     assert(['present', 'absent', 'preserved', 'appeared', 'disappeared'].includes(check.kind), 'Unknown check kind');
     validateSelector(check.selector);
-    if (['preserved', 'appeared', 'disappeared'].includes(check.kind)) validateSelector(check.after);
+    if (['preserved', 'appeared', 'disappeared'].includes(check.kind)) validateTrigger(check.after);
   }
   const limits = { maxSteps: 20, maxDurationMs: 300000, agentTimeoutMs: 60000, maxObservationAgeMs: 120000, ...value.limits };
   for (const [key, max] of Object.entries({ maxSteps: 200, maxDurationMs: 3600000, agentTimeoutMs: 300000, maxObservationAgeMs: 300000 })) {
@@ -41,8 +41,19 @@ export function validateSelector(selector) {
   for (const key of keys) text(selector[key], `selector.${key}`);
 }
 
+// A check's trigger: one selector, or a list of selectors any one of which counts (one control under several states' labels).
+export function validateTrigger(trigger) {
+  if (!Array.isArray(trigger)) return validateSelector(trigger);
+  assert(trigger.length > 0 && trigger.length <= 10, 'A trigger list needs 1-10 selectors');
+  for (const selector of trigger) validateSelector(selector);
+}
+
 export function matches(element, selector) {
   return Object.entries(selector).every(([key, value]) => String(element[key] ?? '') === value);
+}
+
+export function matchesTrigger(element, trigger) {
+  return (Array.isArray(trigger) ? trigger : [trigger]).some(selector => matches(element, selector));
 }
 
 export const ACTION_TYPES = ['click', 'click_point', 'type', 'press', 'scroll', 'wait'];

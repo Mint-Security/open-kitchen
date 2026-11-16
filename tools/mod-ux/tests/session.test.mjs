@@ -286,3 +286,16 @@ test('appearance needs a confirmed transition from absent to present', () => {
   assert.equal(assess(before, action, { ...after, elements: [], semanticCoverage: 'sparse' }), 'unassessed');
   assert.equal(assess(before, { ...action, outcome: 'uncertain' }, after), 'unassessed');
 });
+
+test('a trigger list accepts a click on any of its selectors and nothing else', () => {
+  const check = { id: 'opened', kind: 'appeared', selector: { label: 'Pane' }, after: [{ label: 'Open' }, { label: 'Open pane' }] };
+  validateScenario({ ...source, checks: [check] });
+  assert.throws(() => validateScenario({ ...source, checks: [{ ...check, after: [] }] }), /1-10 selectors/);
+  assert.throws(() => validateScenario({ ...source, checks: [{ ...check, after: [{ label: 'Open' }, { id: 'open' }] }] }), /role, label and value/);
+  const action = { id: 'click', kind: 'action', action: { type: 'click', element: 'open' }, before: 'before', after: 'after', outcome: 'dispatched' };
+  const after = { id: 'after', kind: 'observation', elements: [{ id: 'pane', label: 'Pane' }] };
+  const assess = label => evaluateChecks({ scenario: { checks: [check] }, events: [{ id: 'before', kind: 'observation', elements: [{ id: 'open', label }] }, action, after] })[0].status;
+  assert.equal(assess('Open'), 'passed');
+  assert.equal(assess('Open pane'), 'passed');
+  assert.equal(assess('Close'), 'unassessed');
+});
