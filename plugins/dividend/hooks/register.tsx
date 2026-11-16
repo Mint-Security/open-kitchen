@@ -128,11 +128,17 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, drawBand)
   on('ui.render', { component: 'CommandOutput', props: { command: 'dividend' } }, drawCard)
   on('ui.render', { component: 'Pane', requestId: PANE }, drawPane)
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const result = await next(e)
+    $.ui.invalidate('ui.render')
+    return result
+  })
 }
 
 function configure(options: Parameters<Register>[1]) {
   budgetUsd = typeof options.budgetUsd === 'number' && options.budgetUsd > 0 ? options.budgetUsd : 0
   isTipping = options.tips !== false
+  isBandRecheckDue = false
   isActing = options.actions !== false
   areasOff = new Set((['cache', 'context', 'limits'] as const).filter(area => options[area] === false))
 }
@@ -721,7 +727,7 @@ async function runCommand($: EngineInterface, text: string): Promise<{ text?: st
     }
   }
 
-  await $.ui.open({ id: PANE, title: 'Dividend' })
+  await openPane($)
   detach(observe($))
 
   return {}
@@ -831,11 +837,40 @@ function toggleLesson($: EngineInterface, topic: LessonTopic) {
   $.ui.invalidate('ui.render')
 }
 
+async function openPane($: EngineInterface) {
+  try {
+    await $.ui.open({ id: PANE, title: 'Dividend' })
+  } catch (error) {
+    // Another plugin's ui.open hook can refuse the pane.
+    $.ui.toast(`Dividend's pane didn't open: ${error instanceof Error ? error.message : String(error)}`)
+    return
+  }
+  $.ui.invalidate('ui.render')
+}
+
+// The band steps aside while the pane is shown. Nothing tells a plugin when its pane goes behind
+// another tab, so while the band is waiting it looks again shortly.
+const BAND_RECHECK_MS = 2000
+let isBandRecheckDue = false
+
+function recheckBand($: EngineInterface) {
+  if (isBandRecheckDue) {
+    return
+  }
+  isBandRecheckDue = true
+  $.clock.after(BAND_RECHECK_MS, () => {
+    isBandRecheckDue = false
+    $.ui.invalidate('ui.render')
+  })
+}
+
+const isPaneShown = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced && pane.isShown)
+
 const viewActions = ($: EngineInterface) => ({
   compact: (tip: DividendTip) => void compactNow($, tip),
   ask: (tip: DividendTip) => void askClaude($, tip),
   react: (tip: DividendTip, reaction: DividendReaction) => void react($, tip, reaction),
-  openPane: () => void $.ui.open({ id: PANE, title: 'Dividend' }),
+  openPane: () => void openPane($),
   openFile: (path: string) => void openFile($, path),
   toggleLesson: (topic: LessonTopic) => toggleLesson($, topic),
   chooseExpiryAction: (action: CacheExpiryAction) => void chooseExpiryAction($, action),
@@ -856,6 +891,11 @@ const drawBand: MatchedHook<'ui.render', { component: 'AbovePrompt' }> = async (
   if (!current) {
     return below
   }
+  // The pane shows every tip: nothing to add while it is up.
+  if (await isPaneShown($)) {
+    recheckBand($)
+    return below
+  }
   return bandView($.ui.resolve(e), { tip: current, canCompact: isActing && current.action === 'compact' && !e.props.isWorking, isActing }, viewActions($))
 }
 
@@ -874,5 +914,5 @@ const drawPane: MatchedHook<'ui.render', { component: 'Pane'; requestId: typeof 
   const seen = await read($, usage)
   const canCompact = isActing && !isTurnRunning()
   const chosen = await expiryAction($)
-  return paneView($.ui.resolve(e), { all, reacted, seen, canCompact, isActing, openLesson, expiryAction: chosen, isInteractive }, viewActions($))
+  return paneView($.ui.resolve(e), { all, reacted, seen, canCompact, isActing, openLesson, expiryAction: chosen, isInteractive, isNarrow: e.props.bodyColumns < 60 }, viewActions($))
 }

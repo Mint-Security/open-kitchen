@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename, open, unlink, access } from 'node:f
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { assert, matches, validateAction, validateScenario, validateDecision, validateCritic } from './protocol.mjs';
+import { assert, matches, matchesTrigger, validateAction, validateScenario, validateDecision, validateCritic } from './protocol.mjs';
 import { PeekabooDriver } from './peekaboo.mjs';
 import { FixtureDriver } from './fixture.mjs';
 import { writeReport } from './report.mjs';
@@ -157,7 +157,7 @@ export function evaluateChecks(session) {
       const before = session.events.find(item => item.id === event.before);
       const after = session.events.find(item => item.id === event.after);
       const clicked = before?.elements.find(item => item.id === event.action.element);
-      if (!clicked || !matches(clicked, check.after)) continue;
+      if (!clicked || !matchesTrigger(clicked, check.after)) continue;
       const evidence = [before.id, event.id, ...(after ? [after.id] : [])];
       if (event.outcome !== 'dispatched' || !after) {
         exercised.push({ status: 'unassessed', evidence });

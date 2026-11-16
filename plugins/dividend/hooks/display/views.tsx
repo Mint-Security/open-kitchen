@@ -5,6 +5,7 @@ import type { ElementTable } from 'claude-code'
 
 import type { DividendReaction, DividendTip, DividendUsage } from '../../types'
 import { askFor } from '../tips/asks'
+import { tipKindOf } from '../tips/kinds'
 import { CACHE_EXPIRY_ACTIONS, KEEP_ALIVES_IN_A_ROW } from '../tips/cache'
 import type { CacheExpiryAction } from '../tips/cache'
 import { keyOf, tokens } from './format'
@@ -65,10 +66,13 @@ export const bandView = (
     <Box gap={1}>
       {tipButtons(Button, tip, { canCompact, isActing, isBand: true }, act)}
       <Button key="dividend-later" label="Later" hotkey="l" onPress={() => act.react(tip, 'later')} />
-      <Button key="dividend-open" label="All tips" hotkey="o" dimColor onPress={() => act.openPane()} />
+      <Button key="dividend-open" label={OPEN_LABEL} hotkey="o" onPress={() => act.openPane()} />
     </Box>
   </Box>
 )
+
+// The band's way into the pane; the desktop UX scenarios in ux-evals click it by this label.
+export const OPEN_LABEL = 'Usage & tips'
 
 // The /dividend session card, drawn from the figures it was printed with.
 export const cardView = ({ Box, Text }: Pick<Elements, 'Box' | 'Text'>, rows: Row[]) => (
@@ -85,7 +89,7 @@ export const cardView = ({ Box, Text }: Pick<Elements, 'Box' | 'Text'>, rows: Ro
 
 export const paneView = (
   { Box, Button, Text }: Elements,
-  { all, reacted, seen, canCompact, isActing, openLesson, expiryAction, isInteractive }: { all: DividendTip[]; reacted: Record<string, DividendReaction>; seen: DividendUsage | null; canCompact: boolean; isActing: boolean; openLesson: LessonTopic | null; expiryAction: CacheExpiryAction; isInteractive: boolean },
+  { all, reacted, seen, canCompact, isActing, openLesson, expiryAction, isInteractive, isNarrow }: { all: DividendTip[]; reacted: Record<string, DividendReaction>; seen: DividendUsage | null; canCompact: boolean; isActing: boolean; openLesson: LessonTopic | null; expiryAction: CacheExpiryAction; isInteractive: boolean; isNarrow: boolean },
   act: TipActions & { openFile: (path: string) => void; toggleLesson: (topic: LessonTopic) => void; chooseExpiryAction: (action: CacheExpiryAction) => void },
 ) => {
   const cache = seen ? cacheRow(seen) : null
@@ -99,15 +103,15 @@ export const paneView = (
       {seen && (
         <Box flexDirection="column">
           <Text bold>This session</Text>
-          {rowsTree({ Box, Text }, cache ? [cache] : [], width)}
+          {rowsTree({ Box, Text }, cache ? [cache] : [], width, isNarrow)}
           {seen.memoryTokens !== null && (
             <Box flexDirection="column">
-              {rowsTree({ Box, Text }, [{ label: 'Instruction files', value: tokens(seen.memoryTokens) }], width)}
+              {rowsTree({ Box, Text }, [{ label: 'Instruction files', value: `${tokens(seen.memoryTokens)} tokens` }], width, isNarrow)}
               <Box flexDirection="column" rowGap={1} marginTop={1}>
               {scopes.map(scope => (
-                <Box key={`dividend-scope-${scope.name}`}>
-                  <Box width={width} flexShrink={0}>
-                    <Text dimColor>{`  ${scope.name} ${tokens(scope.tokens)}`}</Text>
+                <Box key={`dividend-scope-${scope.name}`} flexDirection={isNarrow ? 'column' : 'row'}>
+                  <Box {...(isNarrow ? {} : { width, flexShrink: 0 })}>
+                    <Text dimColor>{`${isNarrow ? '' : '  '}${scope.name} ${tokens(scope.tokens)}`}</Text>
                   </Box>
                   <Box columnGap={2} rowGap={1} flexWrap="wrap" flexShrink={1}>
                     {scope.files.map(file => (
@@ -127,14 +131,17 @@ export const paneView = (
       )}
       {newestFirst.map(tip => {
         const reaction = reacted[tip.id]
+        const kind = tipKindOf(tip.id)
+        const isEarlierWarning = (reaction === 'seen' || reaction === 'not-relevant') && (kind === 'rate-limit' || kind === 'wall')
 
         return (
           <Box key={`dividend-tip-${tip.id}`} flexDirection="column">
             <Text wrap="wrap">
               <Text color={reaction ? undefined : 'green'}>{reaction ? '○' : '●'} </Text>
-              <Text bold={!reaction}>{tip.title}</Text>
+              <Text bold={!reaction}>{isEarlierWarning ? `Earlier warning: ${tip.title}` : tip.title}</Text>
             </Text>
             <Text dimColor wrap="wrap">{tip.body}</Text>
+            {isEarlierWarning && <Text dimColor wrap="wrap">Saved warning. The status line shows current usage.</Text>}
             {reaction ? (
               <Text dimColor>{REACTION_LABEL[reaction]}</Text>
             ) : (

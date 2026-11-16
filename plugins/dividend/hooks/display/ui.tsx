@@ -9,12 +9,12 @@ import type { Row } from './rows'
 export const labelWidth = (labels: string[]): number => Math.max(0, ...labels.map(label => label.length)) + 2
 
 // Label, figure and note in columns; a bar's cells left in green.
-export const rowsTree = ({ Box, Text }: Pick<ElementTable, 'Box' | 'Text'>, drawn: Row[], width = labelWidth(drawn.map(row => row.label))) => {
+export const rowsTree = ({ Box, Text }: Pick<ElementTable, 'Box' | 'Text'>, drawn: Row[], width = labelWidth(drawn.map(row => row.label)), stacked = false) => {
   const rows = drawn.map(row => ({ label: plain(row.label, 80), value: plain(row.value, 200), ...(row.note ? { note: plain(row.note, 400) } : {}) }))
 
   return rows.map((row, index) => (
-    <Box key={`dividend-row-${index}`}>
-      <Box width={width} flexShrink={0}>
+    <Box key={`dividend-row-${index}`} flexDirection={stacked ? 'column' : 'row'}>
+      <Box {...(stacked ? {} : { width, flexShrink: 0 })}>
         <Text dimColor>{row.label}</Text>
       </Box>
       <Box flexShrink={1}>
