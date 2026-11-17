@@ -299,3 +299,27 @@ test('a trigger list accepts a click on any of its selectors and nothing else', 
   assert.equal(assess('Open pane'), 'passed');
   assert.equal(assess('Close'), 'unassessed');
 });
+
+test('the critic sees every frame of a short run, and the frames the checks decided on in a long one', async () => {
+  const { criticSamples } = await import('../src/session.mjs');
+  const frames = count => Array.from({ length: count }, (_, index) => ({ id: `o${index}`, kind: 'observation', image: `f${index}.png`, elements: [] }));
+  // Five frames: all five. A stride once left out the only one with the plugin's pane open.
+  assert.deepEqual(criticSamples({ events: frames(5) }).map(event => event.id), ['o0', 'o1', 'o2', 'o3', 'o4']);
+  const events = [...frames(20), { id: 'a', kind: 'action' }];
+  const picked = criticSamples({ events, checkResults: [{ evidence: ['o13', 'a', 'o14'] }] }).map(event => event.id);
+  assert.deepEqual(picked, ['o0', 'o4', 'o8', 'o13', 'o14', 'o19']);
+});
+
+test('the critic reads a compact trace: elements only for the frames it sees, named ones only', async () => {
+  const { criticTrace } = await import('../src/session.mjs');
+  const element = index => ({ id: `e${index}`, role: index % 2 ? 'group' : 'button', label: index % 2 ? '' : `Button ${index}`, actionable: true });
+  const events = Array.from({ length: 12 }, (_, index) => ({ id: `o${index}`, kind: 'observation', image: `f${index}.png`, receipt: { snapshot: 'x' }, focus: 'f', elements: Array.from({ length: 300 }, (_, item) => element(item)) }));
+  events.push({ id: 'n', kind: 'native', driver: 'codex', steps: [] });
+  const trace = criticTrace(events, new Set(['o0', 'o11']));
+  assert.equal(trace[0].elements.length, 150); // Named ones only.
+  assert.deepEqual(trace[0].elements[0], { role: 'button', label: 'Button 0' });
+  assert.equal(trace[5].elements, '300 elements, not included');
+  assert(trace.every(item => item.receipt === undefined && item.focus === undefined));
+  assert.equal(trace.at(-1).kind, 'native');
+  assert(JSON.stringify(trace).length < JSON.stringify(events).length / 5);
+});

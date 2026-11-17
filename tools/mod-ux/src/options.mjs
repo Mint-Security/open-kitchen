@@ -9,7 +9,7 @@
  * @property {AbortSignal} [signal] Cancels the current subprocess invocation.
  * @property {number} [maxBytes] Combined stdout/stderr byte limit.
  *
- * @typedef {CommandOptions & { input?: string }} ProcessOptions
+ * @typedef {CommandOptions & { input?: string, onStdout?: (chunk: Buffer) => void }} ProcessOptions
  * @typedef {(command: string[], options?: ProcessOptions) => Promise<{stdout: string, stderr?: string}>} Executor
  *
  * @typedef {object} AgentCallOptions

@@ -113,7 +113,6 @@ export async function applyAction({ directory, session, driver, action, observat
   const observation = session.events.find(event => event.id === observationId);
   assert(Date.now() - Date.parse(observation.at) <= session.scenario.limits.maxObservationAgeMs, 'Observation expired; observe again');
   validateAction(action, observation, session.scenario.allowedActions);
-  if (action.type === 'click_point') assert(session.target.interactionMode === 'foreground', 'Point clicks require a scenario with foreground mode');
   processOptions(session, options);
   session.observationConsumed = true;
   session.steps++;
@@ -215,18 +214,45 @@ export function testerRequest(directory, session) {
   };
 }
 
+// The trace the critic reads. Claude Desktop's accessibility tree runs to hundreds of elements per
+// frame, which would put a run's trace far over one call's budget; so only the frames the critic
+// also sees as images keep their elements, and only the named ones, as role, label and value.
+export function criticTrace(events, sampled) {
+  return events.map(({ receipt, driverResult, ...event }) => {
+    if (event.kind !== 'observation') return event;
+    const { elements = [], focus, ...rest } = event;
+    if (!sampled.has(event.id)) return { ...rest, elements: `${elements.length} elements, not included` };
+    const named = elements.filter(item => item.label || item.value).map(({ role, label, value }) => ({ role, label, ...(value === undefined ? {} : { value }) }));
+    return { ...rest, elements: named };
+  });
+}
+
+// The frames the critic sees: all of them when there are few. Otherwise the first and the last, the
+// ones the checks decided on, then evenly spaced others, up to the limit. A plain stride once left
+// out the only frame with the plugin's pane open.
+export function criticSamples(session, limit = 6) {
+  const observations = session.events.filter(event => event.kind === 'observation');
+  if (observations.length <= limit) return observations;
+  const ids = new Set(observations.map(event => event.id));
+  const picked = new Set([observations[0].id, observations.at(-1).id]);
+  const add = id => { if (picked.size < limit && ids.has(id)) picked.add(id); };
+  for (const check of session.checkResults ?? []) for (const id of check.evidence ?? []) add(id);
+  const step = (observations.length - 1) / (limit - 1);
+  for (let index = 1; index < limit - 1; index++) add(observations[Math.round(index * step)].id);
+  return observations.filter(event => picked.has(event.id));
+}
+
 /** @param {import('./options.mjs').ReviewOptions} options */
 export async function reviewSession({ directory, session, critic, ...options }) {
   delete session.critic;
   delete session.criticError;
-  const observations = session.events.filter(event => event.kind === 'observation');
-  // Bounded, explicitly indexed samples; the full accessibility/action trace is still supplied.
-  const samples = observations.filter((_, index) => index === 0 || index === observations.length - 1 || index % Math.max(1, Math.ceil(observations.length / 4)) === 0).slice(0, 6);
+  // Bounded, explicitly indexed samples; every event is still in the trace.
+  const samples = criticSamples(session);
   const request = {
     version: 1, role: 'critic', instructions: CRITIC_PROMPT, goal: session.scenario.goal,
     driver: { kind: session.target.kind, interactionMode: session.target.interactionMode ?? 'background' },
     status: session.status, testerSummary: session.summary, checks: session.checkResults,
-    trace: session.events.map(({ receipt, driverResult, ...event }) => event),
+    trace: criticTrace(session.events, new Set(samples.map(event => event.id))),
     imageEvidence: samples.map(event => ({ id: event.id, path: join(directory, event.image) })),
     images: samples.map(event => join(directory, event.image)),
   };

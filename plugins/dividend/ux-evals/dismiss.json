@@ -3,6 +3,15 @@
   "name": "Dismiss a Dividend tip while keeping a draft",
   "goal": "In this disposable session, dismiss the currently visible Dividend tip with Got it, then inspect whether the tip is gone and whether the existing unsent draft 'UX lab draft — do not send' is still intact. Do not submit anything. If the tip is already gone, report that the dismissal task could not be exercised.",
   "target": { "app": "com.anthropic.claudefordesktop", "interactionMode": "foreground" },
+  "setup": {
+    "store": {
+      "dividend": {
+        "tips": [{ "id": "tip:rate-limit:seven_day:2099-01-04T00:00:00.000Z", "title": "96% of your weekly limit is used", "body": "It resets in a few days. Pace what is left, or move routine work to a lighter model.", "receivedAt": 1793000000000 }],
+        "reactions": {}
+      }
+    },
+    "draft": "UX lab draft — do not send"
+  },
   "constraints": [
     "Use only the prepared disposable session. Do not navigate to other conversations.",
     "Do not submit, type into or delete the existing draft, approve tools, switch models or install anything.",

@@ -10,7 +10,7 @@ export function commandArray(value) {
 
 // Never invoke a shell. Timeout/abort kills the process group and bounds pipe cleanup.
 /** @param {import('./options.mjs').ProcessOptions} [options] */
-export function execute(command, { input = '', timeoutMs = 30000, cwd, env = process.env, signal, maxBytes = 16 * 1024 * 1024 } = {}) {
+export function execute(command, { input = '', timeoutMs = 30000, cwd, env = process.env, signal, maxBytes = 16 * 1024 * 1024, onStdout } = {}) {
   commandArray(command);
   if (signal?.aborted) return Promise.reject(new Error('Process aborted'));
   return new Promise((resolve, reject) => {
@@ -40,6 +40,9 @@ export function execute(command, { input = '', timeoutMs = 30000, cwd, env = pro
       settled = true;
       finish();
       if (error) {
+        // Whatever the process wrote before it was stopped, for evidence.
+        error.stdout ??= Buffer.concat(stdoutChunks).toString('utf8');
+        error.stderr ??= Buffer.concat(stderrChunks).toString('utf8');
         child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy();
         child.unref();
         reject(error);
@@ -47,7 +50,12 @@ export function execute(command, { input = '', timeoutMs = 30000, cwd, env = pro
     };
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
-    child.stdout.on('data', chunk => { bytes += chunk.length; if (bytes > maxBytes) fail(new Error('Process output limit exceeded')); else stdoutChunks.push(chunk); });
+    child.stdout.on('data', chunk => {
+      bytes += chunk.length;
+      if (bytes > maxBytes) { fail(new Error('Process output limit exceeded')); return; }
+      stdoutChunks.push(chunk);
+      try { onStdout?.(chunk); } catch (error) { fail(error); }
+    });
     child.stderr.on('data', chunk => { bytes += chunk.length; if (bytes > maxBytes) fail(new Error('Process output limit exceeded')); else stderrChunks.push(chunk); });
     child.stdin.on('error', () => {});
     child.on('error', error => settle(error));

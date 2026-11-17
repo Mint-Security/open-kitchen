@@ -31,7 +31,24 @@ export function validateScenario(value) {
   }
   assert(Array.isArray(value.allowedActions ?? []), 'allowedActions must be an array');
   for (const action of value.allowedActions ?? []) assert(ACTION_TYPES.includes(action), `Unknown allowed action: ${action}`);
+  if (value.setup !== undefined) validateSetup(value.setup);
   return { ...value, checks: value.checks ?? [], limits, allowedActions: value.allowedActions ?? ['click', 'type', 'press', 'scroll', 'wait'] };
+}
+
+// What `try` prepares before the tester starts: the plugin's store, the session's first message,
+// and an unsent draft. `start` and `run` attach to a session someone prepared and ignore it.
+function validateSetup(setup) {
+  assert(setup && typeof setup === 'object' && !Array.isArray(setup), 'setup must be an object');
+  assert(Object.keys(setup).every(key => ['store', 'prompt', 'draft'].includes(key)), 'setup supports store, prompt and draft');
+  for (const key of ['prompt', 'draft']) {
+    if (setup[key] === undefined) continue;
+    text(setup[key], `setup.${key}`, 2000);
+    assert(!/[\x00-\x1f\x7f]/.test(setup[key]) && !/\\[ntrb]/.test(setup[key]), `setup.${key} must be one line of literal text`);
+  }
+  if (setup.store !== undefined) {
+    assert(setup.store && typeof setup.store === 'object' && !Array.isArray(setup.store), 'setup.store must be an object');
+    assert(JSON.stringify(setup.store).length <= 1024 * 1024, 'setup.store is over 1 MiB');
+  }
 }
 
 export function validateSelector(selector) {
@@ -64,7 +81,7 @@ export function validateAction(action, observation, allowed = ACTION_TYPES) {
   if (['click', 'scroll'].includes(action.type)) {
     text(action.element, 'element', 200);
     assert(observation.elements.some(item => item.id === action.element), 'Element is not in the current observation');
-    if (action.type === 'click') assert(observation.elements.find(item => item.id === action.element)?.actionable !== false, 'Element is not actionable; use a screenshot point when foreground mode is enabled');
+    if (action.type === 'click') assert(observation.elements.find(item => item.id === action.element)?.actionable !== false, 'Element is not actionable; use a screenshot point (click_point) if the scenario allows it');
   }
   if (action.type === 'click_point') for (const key of ['x', 'y']) assert(Number.isFinite(action[key]) && action[key] >= 0 && action[key] <= 1, 'Point coordinates must be normalized 0–1');
   if (action.type === 'type') {

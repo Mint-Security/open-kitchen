@@ -5,12 +5,19 @@ export function measureSession(session) {
   const sum = (items, key) => items.reduce((total, item) => total + (item[key] ?? 0), 0);
   const roleTime = role => Array.isArray(invocations) ? sum(invocations.filter(item => item.role === role), 'durationMs') : null;
   const checks = session.checkResults ?? [];
+  // A native driver (Codex) does its own input; the harness counts it from the driver's trace,
+  // setup included, or leaves it unmeasured.
+  const native = session.events.find(event => event.kind === 'native');
+  const nativeActions = native && {
+    total: native.inputs?.total ?? null, byType: native.inputs?.byType ?? null, uncertain: null, pending: null,
+    source: native.inputs ? `${native.driver} trace, setup included` : `unmeasured: ${native.driver} did the input`,
+  };
   return {
     version: 1,
     surface: session.target?.kind === 'fixture' ? 'synthetic' : 'desktop',
     task: { testerStatus: session.status, completionBasis: 'tester self-report; configured checks assessed separately' },
     observations: observations.length,
-    actions: {
+    actions: nativeActions || {
       total: actions.length,
       byType: Object.fromEntries(['click', 'click_point', 'type', 'press', 'scroll', 'wait'].map(type => [type, actions.filter(event => event.action.type === type).length])),
       uncertain: actions.filter(event => event.outcome === 'uncertain').length,

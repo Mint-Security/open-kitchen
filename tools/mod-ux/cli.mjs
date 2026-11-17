@@ -1,19 +1,25 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { resolve, join, dirname } from 'node:path';
+import { resolve, join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { PeekabooDriver } from './src/peekaboo.mjs';
 import { FixtureDriver } from './src/fixture.mjs';
 import { validateScenario, assert } from './src/protocol.mjs';
-import { commandArray } from './src/process.mjs';
+import { commandArray, execute } from './src/process.mjs';
 import { assertPrivateOutput } from './src/output.mjs';
+import { findPluginDir, prepareWorkspace, cleanupWorkspace, startDesktopSession, frontApp } from './src/launch.mjs';
+import { codexIsolation, codexRun, openCodexRun, recordCodexRun, resolveCodex } from './src/codex.mjs';
+import { watchFocus } from './src/focus.mjs';
+import { claudeKeyTaps } from './src/taps.mjs';
 import { createSession, withSession, driverFor, capture, applyAction, finishSession, runLoop, agentCaller, reviewSession } from './src/session.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const help = `Mod UX Lab · desktop-first mod testing (Node 22+)
 
+  node tools/mod-ux/cli.mjs try SCENARIO... [--driver peekaboo|codex] [--codex-model MODEL] [--plugin DIR] [--out DIRECTORY] [--critic claude|none] [--keep-workspace]
+      --driver codex is experimental: Codex's Computer Use does the input, in the background.
   node tools/mod-ux/cli.mjs demo [--out NEW_DIRECTORY] [--control]
   node tools/mod-ux/cli.mjs doctor
   node tools/mod-ux/cli.mjs windows
@@ -30,7 +36,10 @@ Outputs inside Git must be ignored; --allow-unignored-output explicitly override
 Model options: --model NAME --call-budget-usd 0.50 (per invocation; target costs separate).
 Desktop driver: Peekaboo 4.9.8+, macOS, Screen Recording + Accessibility permission.
 Set MOD_UX_PEEKABOO to its executable. No automatic installation or permission changes.
-Start attaches to a manually prepared, disposable Claude Desktop session. It does not reset or install mods.
+Try installs the scenario's plugin for a reused test folder only, opens that folder as a new Claude
+Desktop session in a window of its own, runs the scenario's setup, the tester and the critic in that
+window, then closes it and removes the install again.
+Start and run attach to a session you prepared yourself; they do not install mods.
 All commands return JSON. Reports and screenshots stay in the run directory.
 See tools/mod-ux/README.md for contracts, limits and setup.
 `;
@@ -60,6 +69,7 @@ async function main() {
     variant: { type: 'string' }, observation: { type: 'string' }, action: { type: 'string' }, actor: { type: 'string' }, critic: { type: 'string' },
     status: { type: 'string' }, summary: { type: 'string' }, model: { type: 'string' }, 'call-budget-usd': { type: 'string' }, control: { type: 'boolean' },
     'require-assessed': { type: 'boolean' }, 'allow-unignored-output': { type: 'boolean' },
+    plugin: { type: 'string' }, 'keep-workspace': { type: 'boolean' }, driver: { type: 'string' }, 'codex-model': { type: 'string' },
   } });
   const [command, scenarioFile] = positionals;
   if (values.help || !command) { console.log(help); return; }
@@ -68,8 +78,10 @@ async function main() {
   process.once('SIGINT', stop); process.once('SIGTERM', stop);
   const modelOptions = { model: values.model, callBudgetUsd: Number(values['call-budget-usd'] ?? 0.5), signal: controller.signal };
   if (command === 'run') validateAgent(values.actor, 'actor');
-  if (['run', 'finish'].includes(command)) {
-    validateAgent(values.critic, 'critic');
+  if (command === 'try') validateAgent(values.actor, 'actor');
+  if (command === 'try') assert([undefined, 'peekaboo', 'codex'].includes(values.driver), '--driver must be peekaboo or codex');
+  if (['run', 'finish', 'try'].includes(command)) {
+    if (!(command === 'try' && values.critic === 'none')) validateAgent(values.critic, 'critic');
     assert(Number.isFinite(modelOptions.callBudgetUsd) && modelOptions.callBudgetUsd > 0 && modelOptions.callBudgetUsd <= 100, 'Invalid Claude invocation budget');
   }
   if (command === 'doctor') {
@@ -92,6 +104,95 @@ async function main() {
     ];
     const result = await withSession(directory, async session => runLoop({ directory, session, driver, actor: async () => script.shift(), signal: controller.signal }));
     console.log(JSON.stringify(summary(directory, result), null, 2));
+    return;
+  }
+  if (command === 'try') {
+    const files = positionals.slice(1);
+    assert(files.length > 0, 'try needs one or more scenario files');
+    assert(!values.out || files.length === 1, 'With several scenarios, --out is not used: each run goes to .mod-ux/');
+    const actor = values.actor ?? 'claude';
+    const critic = values.critic === 'none' ? undefined : values.critic ?? 'claude';
+    const results = [];
+    // Only an OpenAI-signed Codex is run, whatever comes first on PATH.
+    const codex = values.driver === 'codex' ? await resolveCodex({ signal: controller.signal }) : undefined;
+    // Computer Use and nothing else: checked before any run starts.
+    const isolation = codex ? await codexIsolation({ codex: codex.binary, signal: controller.signal }) : undefined;
+    if (codex) {
+      // A computer-use controller's leftover keyboard taps on Claude can make every key arrive twice.
+      const held = await claudeKeyTaps({ signal: controller.signal });
+      assert(!held.length, `${[...new Set(held.map(tap => tap.tapper))].join(', ')} already holds keyboard taps on Claude Desktop, which can repeat what you type there. Quit and reopen Claude Desktop first.`);
+    }
+    for (const file of files) {
+      const source = await readFile(resolve(file), 'utf8');
+      const scenario = validateScenario(JSON.parse(source));
+      const pluginDir = resolve(values.plugin ?? await findPluginDir(file));
+      const directory = resolve(values.out ?? join('.mod-ux', `${basename(file, '.json')}-${new Date().toISOString().replace(/[:.]/g, '-')}`));
+      await assertPrivateOutput(directory, { allowUnignored: values['allow-unignored-output'] });
+      await mkdir(dirname(directory), { recursive: true });
+      await frontApp(execute, controller.signal); // Fails early, before installing anything, when the Mac is locked.
+      const workspace = await prepareWorkspace({ pluginDir, setup: scenario.setup, signal: controller.signal });
+      let result, setupError, windowId, focusBack, focusLog, leftTaps = [];
+      const desktop = new PeekabooDriver();
+      const provenance = { scenarioSHA256: createHash('sha256').update(source).digest('hex'), plugin: workspace.name, pluginVersion: workspace.version, pluginDir, folder: workspace.folder, ...(codex ? { codexBinary: codex.binary } : {}) };
+      const variant = values.variant ?? `${workspace.name}@${workspace.version ?? 'unversioned'}`;
+      const focus = values.driver === 'codex' ? watchFocus() : undefined;
+      try {
+        if (values.driver === 'codex') {
+          // Experimental. Codex does every bit of input; the harness watches, keeps the limits and
+          // captures the test window once it has made sure which window that is. The run's record
+          // exists from the start, so `stop --run` stops Codex too.
+          const scratch = join(workspace.root, 'codex');
+          await openCodexRun({ directory, scenario, variant, provenance });
+          result = await withSession(directory, async session => {
+            if (session.finishedAt) return session; // Stopped before Codex started.
+            try {
+              const outcome = await codexRun({ scenario, workspace, scratch, desktop, driverFor: id => new PeekabooDriver({ windowId: id }), model: values['codex-model'], codex: codex.binary, isolation: isolation.args, stopFile: join(directory, 'STOP'), signal: controller.signal });
+              windowId = outcome.windowId; // Set only for a window verified as the test window.
+              focusLog = await focus.stop();
+              return await recordCodexRun({ directory, session, outcome, scratch, driver: windowId === undefined ? undefined : new PeekabooDriver({ windowId }), focus: focusLog,
+                criticFor: critic && (current => agentCaller(critic, { ...modelOptions, cwd: join(directory, 'agent-work'), timeoutMs: scenario.limits.agentTimeoutMs, session: current })) });
+            } catch (error) {
+              // The harness failed, not Codex: the record says so rather than staying "running".
+              if (!session.finishedAt) { session.error ??= error.message; await finishSession({ directory, session, status: 'error', summary: error.message }).catch(() => {}); }
+              throw error;
+            }
+          });
+        } else {
+        try {
+          // Setup is a few seconds of foreground input to the new window, which has taken focus
+          // anyway. A background run gets focus back straight after; a foreground one keeps it until
+          // the run ends.
+          ({ windowId, focusBack } = await startDesktopSession({ workspace, desktop, driverFor: (id, interactionMode = 'background') => new PeekabooDriver({ windowId: id, interactionMode }), setup: scenario.setup, keepFocus: scenario.target.interactionMode === 'foreground', screenshots: join(workspace.root, 'setup'), onNotice: message => console.error(message), onWindow: id => { windowId = id; }, signal: controller.signal }));
+        } catch (error) { setupError = error; throw error; }
+        await createSession({ scenario, directory, windowId, variant, provenance });
+        result = await withSession(directory, async current => {
+          const options = { ...modelOptions, cwd: join(directory, 'agent-work'), timeoutMs: scenario.limits.agentTimeoutMs, session: current };
+          return runLoop({ directory, session: current, driver: driverFor(current), actor: agentCaller(actor, options), critic: critic && agentCaller(critic, options), signal: controller.signal });
+        });
+        }
+      } finally {
+        if (focusBack) await focusBack().catch(error => console.error(`Could not give focus back: ${error.message}`));
+        if (focus && !focusLog) focusLog = await focus.stop().catch(() => undefined);
+        leftTaps = codex ? await claudeKeyTaps().catch(error => [{ tapper: `unknown (${error.message})` }]) : [];
+        if (leftTaps.length) console.error(`${[...new Set(leftTaps.map(tap => tap.tapper))].join(', ')} still holds ${leftTaps.length} keyboard tap(s) on Claude Desktop; keys you type there may arrive twice. Quit and reopen Claude Desktop to clear them.`);
+        const keepFolder = Boolean(values['keep-workspace'] || setupError);
+        const cleanup = await cleanupWorkspace(workspace, { keepFolder });
+        if (windowId !== undefined) await desktop.closeWindow(windowId).catch(error => cleanup.push(`window: ${error.message}`));
+        results.push({
+          scenario: file, ...(result ? summary(directory, result) : { run: directory, status: 'error' }),
+          ...(setupError ? { setupScreenshots: join(workspace.root, 'setup') } : {}),
+          desktopSession: `The test session stays in Claude Desktop's sidebar under ${basename(workspace.folder)}; archive it when done.`,
+          testFolder: workspace.folder, ...(keepFolder ? { runFiles: workspace.root } : {}), ...(cleanup.length ? { cleanupFailures: cleanup } : {}),
+          ...(focusLog ? { focus: focusLog.summary } : {}), ...(leftTaps.length ? { claudeKeyTapsLeft: leftTaps } : {}), ...(codex ? { codex: codex.binary, codexSwitchedOff: isolation.off.servers, ...(codex.passedOver.length ? { codexPassedOver: codex.passedOver } : {}) } : {}),
+        });
+        if (!result) console.log(JSON.stringify(results.length === 1 ? results[0] : results, null, 2));
+      }
+      // A failure (1) outranks missing evidence (2), across scenarios as within one. Keyboard taps
+      // left on Claude Desktop fail the run whatever its result: they repeat what you type there.
+      const code = leftTaps.length ? 1 : runExitCode(result, values['require-assessed']);
+      process.exitCode = [process.exitCode ?? 0, code].includes(1) ? 1 : Math.max(process.exitCode ?? 0, code);
+    }
+    console.log(JSON.stringify(results.length === 1 ? results[0] : results, null, 2));
     return;
   }
   if (['start', 'run'].includes(command)) {
