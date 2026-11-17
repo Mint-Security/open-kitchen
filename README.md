@@ -41,6 +41,10 @@ To test a mod in Claude Desktop itself, one command installs it for a test folde
 npm run mod-ux -- try plugins/dividend/ux-evals/pane.json
 ```
 
+This is that run, from the frames the harness captured (the pointer and the highlights are drawn on):
+
+<img src=".github/assets/mod-ux-demo.gif" width="460" alt="Demo: an AI agent tests Dividend, a Claude Code mod by Mint, in the real Claude Desktop. It looks at the screen, clicks Usage &amp; tips, reads the pane that opens, closes it, and finds the unsent draft still there. All four checks pass.">
+
 ## License
 
 [Apache-2.0](LICENSE)

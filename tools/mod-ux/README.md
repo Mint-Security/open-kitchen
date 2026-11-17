@@ -2,6 +2,10 @@
 
 A local workbench for testing Claude Desktop mod UX. A terminal agent acts as the user, a separate Claude Desktop session is the target, and an optional critic reviews the recorded interaction. Screenshots, actions, observable checks and heuristic concerns appear together in a static HTML report.
 
+<img src="../../.github/assets/mod-ux-demo.gif" width="460" alt="Demo: an AI agent tests Dividend, a Claude Code mod by Mint, in the real Claude Desktop. It looks at the screen, clicks Usage &amp; tips, reads the pane that opens, closes it, and finds the unsent draft still there. All four checks pass.">
+
+The demo is a real `try` run of [Dividend's pane scenario](../../plugins/dividend/ux-evals/pane.json): the frames the harness captured, with the pointer and the highlights drawn on.
+
 V1 targets macOS Claude Desktop through [Peekaboo](https://peekaboo.sh/). Node.js 22+ is the only dependency for the runner, reports and fixture tests. No server, account, telemetry or publishing is provided by Mint.
 
 ## Test a mod in Claude Desktop with one command
