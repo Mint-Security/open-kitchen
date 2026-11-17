@@ -21,6 +21,20 @@ test('failed subprocesses preserve split UTF-8 in stdout and stderr', async () =
   });
 });
 
+test('output is streamed as it comes, and a stopped process keeps what it wrote', async () => {
+  const chunks = [];
+  const streamed = await execute([process.execPath, '-e', 'process.stdout.write("a");setTimeout(()=>process.stdout.write("b"),30)'], { onStdout: chunk => chunks.push(String(chunk)) });
+  assert.equal(streamed.stdout, 'ab');
+  assert.deepEqual(chunks, ['a', 'b']);
+  await assert.rejects(execute([process.execPath, '-e', 'process.stdout.write("partial");setInterval(()=>{},1000)'], { timeoutMs: 500 }), error => {
+    assert.match(error.message, /timed out/);
+    assert.equal(error.stdout, 'partial');
+    return true;
+  });
+  // A listener that throws stops the process, as an abort would.
+  await assert.rejects(execute([process.execPath, '-e', 'process.stdout.write("x");setInterval(()=>{},1000)'], { onStdout: () => { throw new Error('Enough'); } }), /Enough/);
+});
+
 test('subprocess output limits count raw UTF-8 bytes across both streams', async () => {
   const stdout = [process.execPath, '-e', 'process.stdout.write("€".repeat(5))'];
   assert.equal((await execute(stdout, { maxBytes: 15 })).stdout, '€'.repeat(5));

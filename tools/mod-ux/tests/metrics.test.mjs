@@ -37,3 +37,11 @@ test('pending input is visible before an outcome is known', () => {
   assert.equal(metrics.actions.pending, 1);
   assert.equal(metrics.actions.uncertain, 0);
 });
+
+test('input done by a native driver is counted from its trace, or marked unmeasured, never shown as none', () => {
+  const counted = measureSession({ status: 'completed', events: [{ kind: 'native', driver: 'codex', inputs: { total: 9, byType: { click: 6, type: 3 } } }] });
+  assert.deepEqual(counted.actions, { total: 9, byType: { click: 6, type: 3 }, uncertain: null, pending: null, source: 'codex trace, setup included' });
+  const unknown = measureSession({ status: 'completed', events: [{ kind: 'native', driver: 'codex' }] });
+  assert.equal(unknown.actions.total, null);
+  assert.equal(unknown.actions.source, 'unmeasured: codex did the input');
+});

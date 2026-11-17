@@ -35,6 +35,12 @@ Issues and pull requests are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md). P
 npm run mod-ux -- demo
 ```
 
+To test a mod in Claude Desktop itself, one command installs it for a test folder (you trust it once), runs a scenario in its own pop-out window and cleans up. Dividend's scenarios click with your pointer, so don't type or use the mouse until it prints its result:
+
+```bash
+npm run mod-ux -- try plugins/dividend/ux-evals/pane.json
+```
+
 ## License
 
 [Apache-2.0](LICENSE)
