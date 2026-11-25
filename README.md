@@ -2,7 +2,7 @@
 
 Small tools for working with AI agents.
 
-We work with AI agents all day and keep building things to make that better. We're about to publish the ones we keep using here, starting with Dividend and Pair - take what's useful, and tell us what's missing.
+We work with AI agents all day and keep building things to make that better. We're about to publish the ones we keep using here, starting with Dividend, Pair and Commonmind - take what's useful, and tell us what's missing.
 
 ## Claude Code marketplace
 
@@ -22,6 +22,12 @@ Then start a session (or run `/reload-plugins`) and type `/dividend`, or `/pair`
 Pair is a proof of concept: read its [security model](plugins/pair/README.md#security-model-poc) before you hand anyone an invite.
 
 These plugins run inside Claude Code with your permissions, so each one's README says exactly what it does on your machine.
+
+## Commonmind
+
+[Commonmind](commonmind) is a shared, searchable history of your team's Claude Code and Codex sessions, with no server. Each machine copies the transcripts its agents already write into a folder, a private Syncthing carries the folder between teammates, and your agent searches it over MCP. It's a Go program for macOS and Linux that you install yourself, not a plugin.
+
+Transcripts are shared as they are, tool output and any secret in it included, with everyone on the team. Read [what it shares](commonmind/README.md) and [what it can do](SECURITY.md#what-commonmind-can-do) before you set up a team.
 
 ## Contributing
 

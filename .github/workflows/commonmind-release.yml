@@ -1,0 +1,85 @@
+name: commonmind-release
+
+# Builds Commonmind for four platforms and, in the public repository, publishes them as the
+# release commonmind--vX.Y.Z. A manual run is a build-only preview.
+on:
+  push:
+    tags: ['commonmind--v*']
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: commonmind-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - id: plan
+        run: sh commonmind/scripts/release-plan.sh "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+  package:
+    needs: prepare
+    if: needs.prepare.outputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        platform: [darwin, linux]
+        arch: [amd64, arm64]
+    defaults:
+      run:
+        working-directory: commonmind
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # The Go line go.mod requires, at its newest patch. Reading the version from go.mod
+          # would pin that line's first patch.
+          go-version: '1.27'
+          check-latest: true
+          cache-dependency-path: commonmind/go.sum
+      - run: sh scripts/package-release.sh "$PLATFORM" "$ARCH" "$VERSION"
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: commonmind-${{ matrix.platform }}-${{ matrix.arch }}
+          path: commonmind/dist/*.tar.gz
+
+  publish:
+    needs: [prepare, package]
+    if: needs.prepare.outputs.publish == 'true' && github.repository == 'Mint-Security/open-kitchen'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - run: sh commonmind/scripts/release-publish.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}

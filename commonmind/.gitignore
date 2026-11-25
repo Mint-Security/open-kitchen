@@ -1,0 +1,5 @@
+bin/
+*.db
+.DS_Store
+.dev/
+dist/
