@@ -71,6 +71,7 @@ The rest never touch `$`, in four folders:
 - A missing file is never read as intent on its own: publishing checks that the shared folder is there before it treats a file as deleted, and a deleted file stays deleted.
 - One size bound, the same for the writer and the reader: this program never writes a file its own reader would refuse.
 - A change to what an invite carries or how a device proves it holds one keeps `docs/managed-teams.md` in step.
+- The installer, and the command an invite prints, download from this repository's latest GitHub release, which a merge to Commonmind publishes. A GitHub release of anything else here is made with `gh release create --latest=false`.
 
 ## How Commonmind is laid out
 

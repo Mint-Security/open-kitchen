@@ -13,10 +13,10 @@ import (
 )
 
 // fakeGH stands in for the GitHub CLI. It keeps each release as a directory
-// under $FAKE_GH_STATE/releases/<tag> holding "draft", "target" and "assets/",
-// and understands the five `gh release` subcommands a publish can use. While
-// $FAKE_GH_STATE/fail-upload exists, an upload copies its first file and then
-// fails, which is what an interrupted upload leaves behind.
+// under $FAKE_GH_STATE/releases/<tag> holding "draft", "target", "notes" and
+// "assets/", and understands the five `gh release` subcommands a publish can
+// use. While $FAKE_GH_STATE/fail-upload exists, an upload copies its first file
+// and then fails, which is what an interrupted upload leaves behind.
 const fakeGH = `#!/bin/sh
 set -eu
 state=${FAKE_GH_STATE:?}
@@ -36,6 +36,7 @@ case "$action" in
       case "$1" in
         --target) echo "$2" > "$dir/target"; shift 2 ;;
         --title) shift 2 ;;
+        --notes) printf "%s\n" "$2" > "$dir/notes"; shift 2 ;;
         --draft) echo true > "$dir/draft"; shift ;;
         *) shift ;;
       esac
@@ -246,6 +247,46 @@ func TestReleasePublishCreatesTheLatestRelease(t *testing.T) {
 		t.Fatalf("publish: %v\n%s", err, out)
 	}
 	lab.assertPublished("commonmind--v1.0.0", sha, "first")
+}
+
+// TestReleasePublishTakesItsNotesFromTheChangelog: Commonmind shares its
+// repository with other tools, so notes GitHub generates from every pull
+// request since the last release would list theirs too. A version the
+// changelog has a section for gets that section, and nothing from the others.
+func TestReleasePublishTakesItsNotesFromTheChangelog(t *testing.T) {
+	lab := newReleaseLab(t)
+	lab.write("CHANGELOG.md", "# Changelog\n\n## commonmind 1.0.0\n\nThe first release.\n\n- Teams form through invites.\n\n## pair 0.1.3\n\n- A row that says Claude is thinking.\n")
+	sha := lab.commit("first")
+	lab.build("first")
+	if out, err := lab.publish("refs/heads/main", sha, "v1.0.0"); err != nil {
+		t.Fatalf("publish: %v\n%s", err, out)
+	}
+	lab.assertPublished("commonmind--v1.0.0", sha, "first")
+	notes := lab.read("releases", "commonmind--v1.0.0", "notes")
+	if !strings.Contains(notes, "The first release.") || !strings.Contains(notes, "- Teams form through invites.") || strings.Contains(notes, "thinking") || strings.Contains(notes, "##") {
+		t.Fatalf("notes = %q; want the commonmind 1.0.0 section of the changelog alone", notes)
+	}
+}
+
+// TestReleasePublishListsOnlyCommonmindChangesWithoutAChangelogSection: a
+// release the changelog has no section for, such as a patch every merge to
+// main makes, lists the changes to Commonmind since its last release.
+func TestReleasePublishListsOnlyCommonmindChangesWithoutAChangelogSection(t *testing.T) {
+	lab := newReleaseLab(t)
+	lab.commit("Commonmind: the first release")
+	lab.git("tag", "commonmind--v1.0.0")
+	lab.write("plugins/pair/hooks/pair.ts", "export {};\n")
+	lab.git("add", ".")
+	lab.git("commit", "-m", "Pair: a change that is not Commonmind's")
+	sha := lab.commit("Commonmind: a fix")
+	lab.build("fix")
+	if out, err := lab.publish("refs/heads/main", sha, "v1.0.1"); err != nil {
+		t.Fatalf("publish: %v\n%s", err, out)
+	}
+	lab.assertPublished("commonmind--v1.0.1", sha, "fix")
+	if notes := lab.read("releases", "commonmind--v1.0.1", "notes"); notes != "- Commonmind: a fix" {
+		t.Fatalf("notes = %q; want the one Commonmind change since commonmind--v1.0.0", notes)
+	}
 }
 
 func TestReleasePublishFromAnExplicitTag(t *testing.T) {

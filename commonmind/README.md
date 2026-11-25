@@ -170,8 +170,8 @@ headless hosts without a user service manager, use `--no-service` and run
   copied elsewhere may remain. The publisher's local ledger prevents republishing;
   losing that ledger can bring deleted sessions back.
 - One managed team per Commonmind home and one installed user service are supported.
-  Windows service integration, invite revocation and broader membership management are
-  not implemented.
+  Windows service integration, cancelling one invite without removing a device, and leaving
+  a team from a member's machine are not implemented.
 
 ## Documentation and development
 

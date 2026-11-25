@@ -59,7 +59,10 @@ Commonmind shares its repository with other tools, so its releases are tagged
 Merging such a change into `main` publishes a release after the macOS and Linux tests pass.
 The workflow increments the latest stable patch version (`commonmind--v1.0.0` →
 `commonmind--v1.0.1`), builds all four platform/architecture combinations from that tested
-commit, and publishes the tag, installer, archives and SHA-256 checksums together. No manual
+commit, and publishes the tag, installer, archives and SHA-256 checksums together. The release
+notes are that version's section of the root `CHANGELOG.md` or, without one, the commits that
+changed Commonmind since its last release, since other tools' pull requests would fill notes
+GitHub generates. No manual
 tagging or extra token is needed. Reruns reuse an existing tag for that commit, and a failed
 upload stays a draft until all assets are ready. A draft left by a commit that has since been
 superseded is replaced by the newer commit's release. If another Commonmind change lands on `main`
