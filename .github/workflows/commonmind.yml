@@ -1,0 +1,87 @@
+name: commonmind
+
+# Commonmind is Go, and its tests need macOS as well as Linux, so they run only when it changes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'commonmind/**'
+      - '.github/workflows/commonmind.yml'
+      - '.github/workflows/commonmind-release.yml'
+  pull_request:
+    paths:
+      - 'commonmind/**'
+      - '.github/workflows/commonmind.yml'
+      - '.github/workflows/commonmind-release.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: commonmind
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # The Go line go.mod requires, at its newest patch. Reading the version from go.mod
+          # would pin that line's first patch.
+          go-version: '1.27'
+          check-latest: true
+          cache-dependency-path: commonmind/go.sum
+      - name: Install zsh for installer tests
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zsh
+      - run: go test -race ./...
+      - run: go vet ./...
+      - name: Package installer assets
+        shell: bash
+        run: |
+          platform=linux
+          arch=amd64
+          if [[ "$RUNNER_OS" == macOS ]]; then platform=darwin; fi
+          if [[ "$RUNNER_ARCH" == ARM64 ]]; then arch=arm64; fi
+          sh scripts/package-release.sh "$platform" "$arch" test
+          cp scripts/install.sh dist/install.sh
+          (cd dist && shasum -a 256 "commonmind-$platform-$arch.tar.gz" > checksums.txt)
+          mkdir -p .dev/release
+          tar -xzf "dist/commonmind-$platform-$arch.tar.gz" -C .dev/release
+      - name: Smoke-test packaged installer
+        shell: bash
+        run: bash scripts/smoke-install.sh "$PWD/dist" "$RUNNER_TEMP/commonmind-installer-smoke" test
+      - name: Verify real sync
+        shell: bash
+        run: |
+          COMMONMIND_TEST_SYNCTHING="$PWD/.dev/release/syncthing" go test ./internal/syncer -run TestReal -count=1 -v
+          COMMONMIND_TEST_SYNCTHING="$PWD/.dev/release/syncthing" go test ./cmd/commonmind -run TestManagedCLI -count=1 -v
+      - name: Upload installer diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-logs-${{ matrix.os }}
+          path: ${{ runner.temp }}/commonmind-installer-smoke/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    needs: test
+    # Releases come from the public repository only: any other copy tests and stops here.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Mint-Security/open-kitchen'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/commonmind-release.yml

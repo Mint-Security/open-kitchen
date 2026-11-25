@@ -1,5 +1,16 @@
 # Changelog
 
+## commonmind 1.0.0
+
+The first release of Commonmind: a shared, searchable history of your team's Claude Code and Codex sessions, with no server. It sits beside the plugins as a tool of its own, and installs on its own.
+
+- Each machine publishes its transcripts into a folder, a private Syncthing carries the folder between teammates, and `search_sessions`, `list_authors` and `get_session` read it over MCP.
+- A team forms through invites: `commonmind invite` prints one install-and-join command, good for 24 hours.
+- `commonmind members` lists the team's devices. On the creator's machine, `commonmind remove` takes one out and cancels open invites; every teammate drops it on hearing of the removal, from the creator's machine or from a teammate who already has. It keeps what it already received.
+- Transcripts are shared whole, with everyone on the team. `--exclude` or a `.commonmind-ignore` file keeps a directory and everything below it out, and a session that was held back stays held back.
+- Releases are tagged `commonmind--vX.Y.Z`. The installer, and the command an invite prints, download from this repository's latest release.
+- Requires macOS or Linux. Apache-2.0, like the rest of the repository.
+
 ## pair 0.1.3
 
 - The guest's pane shows when the host's Claude is at work, as the host's spinner does: from the moment a turn starts until it ends, a row under the conversation says Claude is thinking, or working while a tool call runs, with how long the turn has taken (`✻ Thinking… (12s)`).

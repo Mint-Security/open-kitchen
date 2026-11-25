@@ -15,7 +15,15 @@ claude plugin validate plugins/pair
 claude plugin test plugins/pair
 ```
 
-All of them must pass; CI runs them on every push and pull request. The lint forbids non-null assertions (`x!`) in each plugin's `hooks/`: handle the missing value instead. Tests may use them. Add a test for any behaviour you change: `plugins/dividend/tests/dividend.test.tsx` and `plugins/pair/tests/pair.test.tsx` drive each whole plugin through Claude Code's test kit, and the other test files cover the pure modules. A change to how Pair's two sides talk also runs `node scripts/e2e-pair.mjs --spend`, which the test kit cannot stand in for.
+For a change to Commonmind, which is Go and has checks of its own:
+
+```bash
+cd commonmind
+go test -race ./...
+go vet ./...
+```
+
+All of them must pass; CI runs them on every push and pull request, Commonmind's only when it changes. The lint forbids non-null assertions (`x!`) in each plugin's `hooks/`: handle the missing value instead. Tests may use them. Add a test for any behaviour you change: `plugins/dividend/tests/dividend.test.tsx` and `plugins/pair/tests/pair.test.tsx` drive each whole plugin through Claude Code's test kit, and the other test files cover the pure modules. A change to how Pair's two sides talk also runs `node scripts/e2e-pair.mjs --spend`, which the test kit cannot stand in for.
 
 ## Dividend's ground rules
 
@@ -54,5 +62,19 @@ The rest never touch `$`, in four folders:
 - `hooks/session/`: what the host shares of its session (`mirror.ts`), and the pairing's log and its lines (`log.ts`).
 - `hooks/pairing/`: a pairing's record, paths and invite (`room.ts`), what `/pair`'s words mean (`command.ts`), and what the status line, `/pair` and the pane say of where it stands, with the state each side tells the other (`status.ts`).
 - `hooks/display/`: the pane and the preview (`pane.tsx`), the band (`band.tsx`), and in `style/` everything that copies how Claude Code draws a conversation: a tool row (`tool-rows.ts`), and the transcript in a terminal's style or the desktop app's (`transcript.tsx`, `terminal.tsx`, `desktop.tsx`). Nothing in `style/` decides what is shared or sent; it only makes what it is given look the way Claude Code draws it.
+
+## Commonmind's ground rules
+
+- The files in the shared folder are the only copy. No index, cache or other state is kept anywhere, so there is nothing to rebuild and no way for two machines to disagree about a search.
+- A transcript is published as the agent wrote it. Nothing is parsed per agent, filtered or redacted, and the docs never suggest otherwise.
+- Commonmind calls nothing on the network but its own Syncthing, on loopback. No server of ours, no telemetry, no model calls.
+- A missing file is never read as intent on its own: publishing checks that the shared folder is there before it treats a file as deleted, and a deleted file stays deleted.
+- One size bound, the same for the writer and the reader: this program never writes a file its own reader would refuse.
+- A change to what an invite carries or how a device proves it holds one keeps `docs/managed-teams.md` in step.
+- The installer, and the command an invite prints, download from this repository's latest GitHub release, which a merge to Commonmind publishes. A GitHub release of anything else here is made with `gh release create --latest=false`.
+
+## How Commonmind is laid out
+
+`commonmind/cmd/commonmind` is the CLI. Under `commonmind/internal`: `session` is the published record and its codec, `store` the shared folder and search, `scan` where each agent keeps its transcripts, `publish` and `ledger` what gets copied and what this machine remembers of it, `settings` the saved configuration, `mcpserver` the three MCP tools, `syncer` the private Syncthing and the invites, and `background` the login service. `commonmind/scripts` holds the installer, the release packaging and their tests; [commonmind/docs/development.md](commonmind/docs/development.md) covers building, the real-sync tests and releases.
 
 By contributing, you agree that your contribution is licensed under the [Apache-2.0](LICENSE) license.

@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" role="img" aria-label="How Commonmind works: on each machine a daemon copies the agents' transcripts into a shared folder, a private Syncthing syncs that folder with teammates over TLS, and the MCP server only reads it.">
+  <!-- Source of commonmind-architecture.png. To regenerate, render this at twice its size in a browser that has Figtree and Geist Mono loaded. -->
+  <style>
+    .t { font: 600 15px Figtree, system-ui, sans-serif; fill: #09221f; }
+    .s { font: 400 11px "Geist Mono", ui-monospace, monospace; fill: #3c5a52; }
+    .l { font: 500 13px Figtree, system-ui, sans-serif; fill: #09221f; paint-order: stroke; stroke: #daf6de; stroke-width: 6px; stroke-linejoin: round; }
+    .l.p { stroke: #f8fef9; }
+    .z { font: 700 11.5px Figtree, system-ui, sans-serif; letter-spacing: .09em; fill: #3c5a52; }
+    .k { font: 500 12px Figtree, system-ui, sans-serif; fill: #3c5a52; }
+    .e { fill: none; stroke: #09221f; stroke-width: 1.6; }
+    .d { stroke-dasharray: 6 5; }
+    .b { fill: #ffffff; stroke: #09221f; stroke-width: 1.6; }
+    .a { fill: #ffb7d5; stroke: #09221f; stroke-width: 1.6; }
+    .sh { fill: #09221f; }
+    .zone { fill: #daf6de; stroke: #bed8c2; stroke-width: 1.5; }
+  </style>
+  <defs>
+    <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#09221f"/></marker>
+  </defs>
+  <rect width="960" height="560" fill="#f8fef9"/>
+
+  <rect class="zone" x="20" y="44" width="480" height="466" rx="18"/>
+  <text class="z" x="42" y="74">YOUR MACHINE</text>
+  <rect class="zone" x="640" y="44" width="300" height="466" rx="18"/>
+  <text class="z" x="662" y="74">A TEAMMATE'S MACHINE</text>
+  <text class="z" x="570" y="74" text-anchor="middle">INTERNET</text>
+
+  <rect class="sh" x="43" y="101" width="190" height="48" rx="10"/><rect class="b" x="40" y="98" width="190" height="48" rx="10"/>
+  <text class="t" x="135" y="127" text-anchor="middle">Claude Code or Codex</text>
+  <rect class="sh" x="293" y="101" width="190" height="48" rx="10"/><rect class="b" x="290" y="98" width="190" height="48" rx="10"/>
+  <text class="t" x="385" y="127" text-anchor="middle">Transcript files</text>
+  <rect class="sh" x="43" y="211" width="190" height="48" rx="10"/><rect class="b" x="40" y="208" width="190" height="48" rx="10"/>
+  <text class="t" x="135" y="237" text-anchor="middle">commonmind mcp</text>
+  <rect class="sh" x="293" y="211" width="190" height="48" rx="10"/><rect class="a" x="290" y="208" width="190" height="48" rx="10"/>
+  <text class="t" x="385" y="237" text-anchor="middle">commonmind daemon</text>
+  <rect class="sh" x="43" y="345" width="190" height="60" rx="10"/><rect class="b" x="40" y="342" width="190" height="60" rx="10"/>
+  <text class="t" x="135" y="367" text-anchor="middle">Shared folder</text>
+  <text class="s" x="135" y="386" text-anchor="middle">sessions/author/day/*.cms</text>
+  <rect class="sh" x="293" y="441" width="190" height="48" rx="10"/><rect class="b" x="290" y="438" width="190" height="48" rx="10"/>
+  <text class="t" x="385" y="467" text-anchor="middle">Private Syncthing</text>
+
+  <path class="e" d="M233 122H288" marker-end="url(#m)"/>
+  <text class="l" x="260" y="112" text-anchor="middle">writes</text>
+  <path class="e" d="M135 149V206" marker-end="url(#m)"/>
+  <text class="l" x="146" y="182">search, read</text>
+  <path class="e" d="M385 208V151" marker-end="url(#m)"/>
+  <text class="l" x="374" y="182" text-anchor="end">reads every minute</text>
+  <path class="e" d="M135 259V340" marker-end="url(#m)"/>
+  <text class="l" x="146" y="304">reads only</text>
+  <path class="e" d="M360 259V372H235" marker-end="url(#m)"/>
+  <text class="l" x="245" y="362">publishes copies</text>
+  <path class="e" d="M135 407V462H288" marker-start="url(#m)" marker-end="url(#m)"/>
+  <text class="l" x="212" y="453" text-anchor="middle">syncs</text>
+  <path class="e d" d="M440 259V436" marker-end="url(#m)"/>
+  <text class="l" x="430" y="404" text-anchor="end">starts it; loopback</text>
+  <text class="l" x="430" y="421" text-anchor="end">API, with a key</text>
+
+  <rect class="sh" x="673" y="101" width="230" height="48" rx="10"/><rect class="b" x="670" y="98" width="230" height="48" rx="10"/>
+  <text class="t" x="785" y="127" text-anchor="middle">Claude Code or Codex</text>
+  <path class="e" d="M785 149V206" marker-end="url(#m)"/>
+  <text class="l" x="796" y="182">search, read</text>
+  <rect class="sh" x="673" y="211" width="230" height="48" rx="10"/><rect class="b" x="670" y="208" width="230" height="48" rx="10"/>
+  <text class="t" x="785" y="237" text-anchor="middle">commonmind mcp, daemon</text>
+  <rect class="sh" x="673" y="345" width="230" height="60" rx="10"/><rect class="b" x="670" y="342" width="230" height="60" rx="10"/>
+  <text class="t" x="785" y="367" text-anchor="middle">Shared folder</text>
+  <text class="s" x="785" y="386" text-anchor="middle">their copy</text>
+  <rect class="sh" x="673" y="441" width="230" height="48" rx="10"/><rect class="b" x="670" y="438" width="230" height="48" rx="10"/>
+  <text class="t" x="785" y="467" text-anchor="middle">Private Syncthing</text>
+  <path class="e" d="M785 262V340" marker-start="url(#m)" marker-end="url(#m)"/>
+  <text class="l" x="796" y="305">publish, read</text>
+  <path class="e" d="M785 408V436" marker-start="url(#m)" marker-end="url(#m)"/>
+  <text class="l" x="796" y="427">syncs</text>
+
+  <rect class="sh" x="515" y="265" width="116" height="60" rx="10"/><rect class="b" x="512" y="262" width="116" height="60" rx="10"/>
+  <text class="t" x="570" y="288" text-anchor="middle">Discovery</text>
+  <text class="t" x="570" y="307" text-anchor="middle">and relays</text>
+  <path class="e d" d="M483 450H491V292H510" marker-end="url(#m)"/>
+  <path class="e d" d="M670 450H653V292H633" marker-end="url(#m)"/>
+  <text class="l p" x="570" y="348" text-anchor="middle">find peers</text>
+
+  <path class="e" d="M485 472H668" marker-start="url(#m)" marker-end="url(#m)"/>
+  <text class="l p" x="577" y="462" text-anchor="middle">TLS, by device ID</text>
+  <text class="l p" x="577" y="492" text-anchor="middle">direct or by relay</text>
+
+  <path class="e" d="M24 536H56"/>
+  <text class="k" x="64" y="540">session data</text>
+  <path class="e d" d="M160 536H192"/>
+  <text class="k" x="200" y="540">control and lookups</text>
+</svg>
