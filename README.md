@@ -1,3 +1,5 @@
+<img src=".github/assets/open-kitchen-banner.jpg" alt="Open Kitchen">
+
 # AI'ing better - community by Mint
 
 Small tools for working with AI agents.
@@ -29,27 +31,13 @@ These plugins run inside Claude Code with your permissions, so each one's README
 
 Transcripts are shared as they are, tool output and any secret in it included, with everyone on the team. Read [what it shares](commonmind/README.md) and [what it can do](SECURITY.md#what-commonmind-can-do) before you set up a team.
 
+## Desktop mod UX testing
+
+[Mod UX Lab](tools/mod-ux/README.md) is an experimental harness that tests Claude Desktop mods with a tester agent, screen recordings, observable checks and a separate UX critic. `npm run mod-ux -- demo` runs a synthetic demo with no desktop permissions or model calls; `npm run mod-ux -- try plugins/dividend/ux-evals/pane.json` runs a scenario in the real app (it uses your pointer, so hands off until it prints a result).
+
 ## Contributing
 
 Issues and pull requests are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md). Please send security reports to opensource@mint.security.
-
-## Desktop mod UX testing
-
-[Mod UX Lab](tools/mod-ux/README.md) is an experimental local harness for testing Claude Desktop mods with a terminal tester agent, screen/action recordings, observable checks and a separate UX critic. Try the synthetic regression demo without desktop permissions or model calls:
-
-```bash
-npm run mod-ux -- demo
-```
-
-To test a mod in Claude Desktop itself, one command installs it for a test folder (you trust it once), runs a scenario in its own pop-out window and cleans up. Dividend's scenarios click with your pointer, so don't type or use the mouse until it prints its result:
-
-```bash
-npm run mod-ux -- try plugins/dividend/ux-evals/pane.json
-```
-
-This is that run, from the frames the harness captured (the pointer and the highlights are drawn on):
-
-<img src=".github/assets/mod-ux-demo.gif" width="460" alt="Demo: an AI agent tests Dividend, a Claude Code mod by Mint, in the real Claude Desktop. It looks at the screen, clicks Usage &amp; tips, reads the pane that opens, closes it, and finds the unsent draft still there. All four checks pass.">
 
 ## License
 
